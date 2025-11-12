@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PDF Knowledge Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="main-container">
+        <header>
+            <h1>PDF Knowledge Assistant</h1>
+            <p class="subtitle">Extract and query knowledge from your PDF documents</p>
+            <div id="stats" class="stats">
+                <span id="doc-count">Documents: 0</span>
+                <span id="topic-count">Topics: 0</span>
+            </div>
+        </header>
+
+        <section id="upload-section" aria-label="PDF Upload">
+            <h2>Upload PDF</h2>
+            <div id="drop-zone" class="drop-zone">
+                <p>Drag and drop PDF file here or click to browse</p>
+                <input type="file" id="file-input" accept=".pdf" style="display: none;">
+            </div>
+            <div id="upload-status" class="upload-status"></div>
+        </section>
+
+        <section id="chat-section" aria-label="Knowledge Query">
+            <h2>Ask Questions</h2>
+            <div id="chat-history" class="chat-box"></div>
+            <form id="query-form" autocomplete="off">
+                <textarea id="query-input" rows="3" placeholder="Ask a question about your documents..."></textarea>
+                <button type="submit">Send Query</button>
+            </form>
+        </section>
+
+        <section id="topics-section" aria-label="Knowledge Topics">
+            <div class="section-header">
+                <h2>Knowledge Topics</h2>
+                <button id="toggle-topics" type="button">Show Topics</button>
+            </div>
+            <div id="topics-container" class="topics-container collapsed">
+                <div id="topics-list"></div>
+            </div>
+        </section>
+
+        <section id="documents-section" aria-label="Document Library">
+            <div class="section-header">
+                <h2>Document Library</h2>
+                <button id="toggle-documents" type="button">Show Documents</button>
+            </div>
+            <div id="documents-container" class="documents-container collapsed">
+                <div id="documents-list"></div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <small>&copy; {{year}} PDF Knowledge Assistant &mdash; Powered by Neuro-San</small>
+    </footer>
+
+    <script>
+        // Socket.IO connection
+        var socket = io.connect('http://' + document.domain + ':' + location.port + '/chat');
+
+        socket.on('connect', function() {
+            console.log('WebSocket connected');
+        });
+
+        // Handle user messages
+        socket.on('user_message', function(data) {
+            addMessageToChat('user', data.data);
+        });
+
+        // Handle agent responses
+        socket.on('agent_response', function(data) {
+            addMessageToChat('agent', data.data);
+        });
+
+        // File upload handling
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadStatus = document.getElementById('upload-status');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+
+        function handleFileUpload(file) {
+            if (!file.name.endsWith('.pdf')) {
+                uploadStatus.innerHTML = '<span class="error">Error: Only PDF files are allowed</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            uploadStatus.innerHTML = '<span class="loading">Uploading and processing ' + file.name + '...</span>';
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    uploadStatus.innerHTML = '<span class="success">' + data.message + '</span>';
+                    updateStats();
+                    loadDocuments();
+                    loadTopics();
+                } else {
+                    uploadStatus.innerHTML = '<span class="error">Error: ' + (data.error || 'Upload failed') + '</span>';
+                }
+            })
+            .catch(error => {
+                uploadStatus.innerHTML = '<span class="error">Error: ' + error.message + '</span>';
+            });
+        }
+
+        // Query form handling
+        document.getElementById('query-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const queryInput = document.getElementById('query-input');
+            const query = queryInput.value.trim();
+
+            if (query) {
+                socket.emit('user_query', {data: query}, '/chat');
+                queryInput.value = '';
+            }
+        });
+
+        function addMessageToChat(sender, message) {
+            const chatHistory = document.getElementById('chat-history');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + sender + '-message';
+
+            const senderLabel = document.createElement('strong');
+            senderLabel.textContent = sender === 'user' ? 'You: ' : 'Assistant: ';
+
+            const messageText = document.createElement('span');
+            messageText.textContent = message;
+
+            messageDiv.appendChild(senderLabel);
+            messageDiv.appendChild(messageText);
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // Topics handling
+        document.getElementById('toggle-topics').addEventListener('click', function() {
+            const container = document.getElementById('topics-container');
+            const button = document.getElementById('toggle-topics');
+            container.classList.toggle('collapsed');
+            button.textContent = container.classList.contains('collapsed') ? 'Show Topics' : 'Hide Topics';
+            if (!container.classList.contains('collapsed')) {
+                loadTopics();
+            }
+        });
+
+        function loadTopics() {
+            fetch('/topics')
+                .then(response => response.json())
+                .then(data => {
+                    const topicsList = document.getElementById('topics-list');
+                    if (data.topics && data.topics.length > 0) {
+                        topicsList.innerHTML = data.topics.map(topic =>
+                            '<div class="topic-item" onclick="loadTopicFacts(\'' + topic + '\')">' + topic + '</div>'
+                        ).join('');
+                    } else {
+                        topicsList.innerHTML = '<p>No topics yet. Upload a PDF to get started.</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading topics:', error);
+                });
+        }
+
+        function loadTopicFacts(topic) {
+            fetch('/topics/' + encodeURIComponent(topic))
+                .then(response => response.json())
+                .then(data => {
+                    alert('Topic: ' + data.topic + '\n\nFacts:\n' + data.facts);
+                })
+                .catch(error => {
+                    console.error('Error loading topic facts:', error);
+                });
+        }
+
+        // Documents handling
+        document.getElementById('toggle-documents').addEventListener('click', function() {
+            const container = document.getElementById('documents-container');
+            const button = document.getElementById('toggle-documents');
+            container.classList.toggle('collapsed');
+            button.textContent = container.classList.contains('collapsed') ? 'Show Documents' : 'Hide Documents';
+            if (!container.classList.contains('collapsed')) {
+                loadDocuments();
+            }
+        });
+
+        function loadDocuments() {
+            fetch('/documents')
+                .then(response => response.json())
+                .then(data => {
+                    const docsList = document.getElementById('documents-list');
+                    if (data.documents && data.documents.length > 0) {
+                        docsList.innerHTML = data.documents.map(doc =>
+                            '<div class="document-item">' +
+                            '<strong>' + doc.filename + '</strong><br>' +
+                            'Pages: ' + doc.page_count + ' | ' +
+                            'Uploaded: ' + new Date(doc.upload_date).toLocaleString() +
+                            '</div>'
+                        ).join('');
+                    } else {
+                        docsList.innerHTML = '<p>No documents uploaded yet.</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading documents:', error);
+                });
+        }
+
+        // Stats handling
+        function updateStats() {
+            fetch('/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('doc-count').textContent = 'Documents: ' + data.document_count;
+                    document.getElementById('topic-count').textContent = 'Topics: ' + data.topic_count;
+                })
+                .catch(error => {
+                    console.error('Error loading stats:', error);
+                });
+        }
+
+        // Initial load
+        updateStats();
+
+        // Shutdown handling
+        window.addEventListener('beforeunload', function () {
+            navigator.sendBeacon('/shutdown');
+        });
+    </script>
+</body>
+</html>

@@ -157,7 +157,7 @@
         "serve": true,
         "public": false
     },
-    "agent_network_query_generator.hocon": { 
+    "agent_network_query_generator.hocon": {
         # This is a support network for agent_network_designer
         # We want it served up, but not listed as a public agent network
         "serve": true,
@@ -168,6 +168,8 @@
     "cruse_agent.hocon": false,
     # Set the following agent network to true before running apps/conscious_assistant/interface_flask.py
     "conscious_agent.hocon": false,
+    # Set the following agent network to true before running apps/pdf_knowledge_assistant/interface_flask.py
+    "pdf_knowledge_agent.hocon": true,
     # Set the following agent network to true before running apps/log_analyzer/log_analyzer.py
     "log_analysis_agents.hocon": false,
 

@@ -1,0 +1,225 @@
+# Copyright (C) 2023-2025 Cognizant Digital Business, Evolutionary AI.
+# All Rights Reserved.
+# Issued under the Academic Public License.
+#
+# You can be released from the terms, and requirements of the Academic Public
+# License by purchasing a commercial license.
+# Purchase of a commercial license is mandatory for any use of the
+# neuro-san SDK Software in commercial settings.
+#
+# END COPYRIGHT
+{
+    "llm_config": {
+        "model_name": "gpt-4o",
+    },
+    "max_iterations": 40000,
+    "max_execution_seconds": 6000,
+    "instructions_prefix": """
+    You are a professional knowledge extraction and retrieval assistant.
+    """,
+
+    "tools": [
+        # This first agent definition is regarded as the "Front Man", which
+        # does all the talking to the outside world/client.
+        {
+            "name": "pdf_knowledge_assistant",
+            "function": {
+                "description": "I help extract and query knowledge from PDF documents."
+            },
+            "instructions": ${instructions_prefix} """
+You are a knowledge extraction and retrieval assistant with access to a dual-layer knowledge system:
+1. RAG Layer: Fast document-specific queries using vector similarity
+2. Topic Memory Layer: Long-term knowledge organized by topics
+
+When a user uploads a PDF:
+1. First, call add_pdf_to_knowledge with the file path to add it to the vector store
+2. Then, call extract_pdf_knowledge to analyze the document content
+3. Review the extracted content and identify 5-10 key topics
+4. IMPORTANT: You MUST immediately call commit_to_memory for EACH fact you identify
+   - Do NOT just list topics - actually call the commit_to_memory tool
+   - Extract at least 3-5 specific facts per topic
+   - Each fact should be a complete, standalone statement
+   - Example: commit_to_memory(topic="technical_skills", new_fact="Proficient in Python, JavaScript, and Java")
+5. After committing all facts, provide a summary of how many topics and facts were stored
+
+When a user asks a question:
+1. First, call list_topics to see what knowledge exists in memory
+2. Identify which topics are relevant to the query
+3. Call recall_memory for each relevant topic to retrieve stored facts
+4. Call query_pdf_knowledge with the user's question to get document-specific details
+5. Synthesize a comprehensive answer combining insights from both memory and RAG
+6. Always indicate the sources of your information (from memory vs from documents)
+
+Guidelines:
+- Be thorough in extracting topics - don't just focus on obvious ones
+- Store facts in a concise, clear manner
+- When querying, use both layers intelligently based on the question type
+- For specific details (quotes, numbers, dates), prioritize RAG results
+- For synthesized insights and patterns, prioritize memory results
+- Organize related facts under appropriate topic names
+- Use descriptive topic names (e.g., "budget_requirements", "technical_specifications", "timeline")
+            """,
+            "allow": {
+                "to_upstream": {
+                    "sly_data": {
+                        "TopicMemory": true,
+                    }
+                }
+            },
+            "tools": [
+                "add_pdf_to_knowledge",
+                "query_pdf_knowledge",
+                "extract_pdf_knowledge",
+                "commit_to_memory",
+                "recall_memory",
+                "list_topics",
+                "reorganize_memory"
+            ]
+        },
+
+        # PDF Knowledge Tools
+        {
+            "name": "add_pdf_to_knowledge",
+            "function": {
+                "description": "I can add PDF documents to the knowledge base."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The file path to the uploaded PDF document."
+                        },
+                    },
+                    "required": ["file_path"]
+                }
+            },
+            "class": "kwik_agents.add_pdf_to_knowledge.AddPdfToKnowledge"
+        },
+        {
+            "name": "query_pdf_knowledge",
+            "function": {
+                "description": "I can query the PDF knowledge base for specific information."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to find relevant document chunks."
+                        },
+                    },
+                    "required": ["query"]
+                }
+            },
+            "class": "kwik_agents.query_pdf_knowledge.QueryPdfKnowledge"
+        },
+        {
+            "name": "extract_pdf_knowledge",
+            "function": {
+                "description": "I can extract structured knowledge (topics and facts) from PDF documents."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The file path to the PDF document."
+                        },
+                        "focus_areas": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of specific topics to focus on during extraction."
+                        },
+                    },
+                    "required": ["file_path"]
+                }
+            },
+            "class": "kwik_agents.extract_pdf_knowledge.ExtractPdfKnowledge"
+        },
+
+        # Topic Memory Tools
+        {
+            "name": "commit_to_memory",
+            "function": {
+                "description": "I can commit facts to memory."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "new_fact": {
+                            "type": "string",
+                            "description": "A brief description of the new fact to remember."
+                        },
+                        "topic": {
+                            "type": "string",
+                            "description": "A topic for this new fact to be stored under."
+                        },
+                    },
+                    "required": ["new_fact", "topic"]
+                }
+            },
+            "class": "kwik_agents.commit_to_memory.CommitToMemory"
+        },
+        {
+            "name": "recall_memory",
+            "function": {
+                "description": "I can recall relevant facts from memory."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {
+                            "type": "string",
+                            "description": "A topic for which to retrieve relevant facts."
+                        },
+                    },
+                    "required": ["topic"]
+                }
+            },
+            "class": "kwik_agents.recall_memory.RecallMemory"
+        },
+        {
+            "name": "list_topics",
+            "function": {
+                "description": "I can list all topics for which we have stored memories."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dialog_name": {
+                            "type": "string",
+                            "description": "A name for the current dialog."
+                        },
+                    },
+                }
+            },
+            "class": "kwik_agents.list_topics.ListTopics"
+        },
+        {
+            "name": "reorganize_memory",
+            "function": {
+                "description": "I can derive new topics and facts from existing memory entries."
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dialog_name": {
+                            "type": "string",
+                            "description": "A name for the current dialog."
+                        },
+                    },
+                }
+            },
+            "instructions": ${instructions_prefix} """
+First, use your list_topics tool to retrieve the full list of topics for which we have stored memories.
+Then:
+ 1) For each topic, use your recall_memory tool to retrieve all memories associated with that topic.
+ 2) Review these memories and see if you can derive more facts from them, to store under existing or new topics.
+ Make sure the facts and topics are expressed in a concise manner. Topics should be general words or phrases.
+ Note that the new fact may be better stored under a new or different topic.
+ Also, note that the same fact already in memory may also belong under a different topic. It is ok to store the same fact under a new topic.
+ Try to be comprehensive on deriving new memories and facts and in the way you expand and reorganize your memory.
+ 3) Use your commit_to_memory tool to store each one of these newly derived facts into your memory.
+ Do not store redundant or overtly similar facts. Make sure each fact is expressing something different and new.
+ If not, don't add any new facts.
+Iterate on the above three steps until you've done a pass on all your topics and memories.
+            """,
+            "command": "Reorganize existing memory entries."
+            "tools": ["commit_to_memory", "recall_memory", "list_topics"]
+        },
+    ]
+}
