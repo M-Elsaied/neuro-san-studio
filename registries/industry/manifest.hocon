@@ -35,6 +35,7 @@
     "industry/retail_ops_and_customer_service.hocon": true,
     "industry/telco_network_support.hocon": true,
     "industry/telco_network_orchestration.hocon": true,
+    "industry/order_fulfilment_system.hocon": true,
     "industry/therapy_vignette_supervisors.hocon": true,
     
     # The following agent networks are used as sub-networks by consumer_decision_assistant.hocon
