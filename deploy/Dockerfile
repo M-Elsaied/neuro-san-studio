@@ -1,5 +1,4 @@
-
-# Copyright © 2023-2026 Cognizant Technology Solutions Corp, www.cognizant.com.
+# Copyright © 2025-2026 Cognizant Technology Solutions Corp, www.cognizant.com.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,30 +14,15 @@
 #
 # END COPYRIGHT
 
-# This Dockerfile is expected to be run from the top-level of neuro-san.
-
-# If you find yourself wanting to modify this file
-# and check it into the neuro-san repo or modify it in place with the
-# neuro-san source code, chances are you shouldn't. Instead, strongly
-# consider creating your own repo with your own agents and using this
-# Dockerfile and accompanying scripts as a basis to riff on for your
-# own projects.  Your own requirements.txt file for your project will
-# need to include neuro-san as a dependency.
-#
-# Use ./neuro_san/deploy/build.sh to build this container from within the
-# neuro-san repo. After a successful build of the container, you can use
-# ./neuro_san/deploy/run.sh to run the built container locally.
+# Use ./deploy/build.sh to build this container. After a successful build,
+# you can use ./deploy/run.sh to run the built container locally.
 #
 # To find server-oriented environment variables to help you configure things
 # how you want, search for "ENV AGENT_" in this file.
 
-# Build arguments
-ARG NEURO_SAN_VERSION="Unspecified"
-ARG PACKAGE_INSTALL=/usr/local/lib/python3.12/site-packages
-
 # Stage 1: Builder Stage - Use our python base image for installations
 # Set python image as base image
-FROM python:3.12-slim as builder
+FROM python:3.13-slim as builder
 
 # Set the shell and options per hadolint recommendations
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -55,12 +39,20 @@ ENV PIP3_VERSION=25.0.1
 # Explicitly get the desired pip version
 RUN pip3 install --upgrade pip==${PIP3_VERSION} --no-cache-dir ; mkdir -p ${APP_SOURCE}
 
-# [s] allows for the requirements file not to be there.
-COPY ./requirement[s].txt ${APP_SOURCE}
-RUN pip install --prefix=/install --no-cache-dir -r ${APP_SOURCE}/requirements.txt
+# Having a requirements.txt file for your coded_tool dependencies is optional
+COPY ./requirements.txt ${APP_SOURCE}/requirements.txt
+# Move the work dir to the app source to find the requirements.
+WORKDIR ${APP_SOURCE}
+RUN if [ -f ${APP_SOURCE}/requirements.txt ]; \
+    then \
+        pip install --prefix=/install --no-cache-dir -r ${APP_SOURCE}/requirements.txt ; \
+    fi
+
+# Reset to the root directory
+WORKDIR /
 
 # Stage 2: Final Stage - Use a slim Python image
-FROM python:3.12-slim AS final
+FROM python:3.13-slim AS final
 
 # Set the shell and options in each FROM section per hadolint recommendations
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -79,6 +71,10 @@ RUN \
     && chown -R ${USERNAME}: /var/log \
     && mkdir -p ${APP_SOURCE}
 
+# Set up a place for the mount of secrets to happen
+RUN mkdir -p ${APP_HOME}/certs/aws \
+    && ln -s ${APP_HOME}/certs/aws ${APP_HOME}/.aws
+
 # This is the port the service will accept http requests on.
 # This should be consistent with the main port for the service as described
 # in any kubernetes <service>.yaml file
@@ -93,29 +89,19 @@ COPY --from=builder /install /usr/local
 # Note: The registries directory where agent definitions live is mandatory
 #       The coded_tools directory where agent code lives is optional
 #       [s] allows for registries/coded_tools from within client repo or neuro-san repo
-COPY ./neuro_san/registrie[s] ./registrie[s] ${APP_SOURCE}/registries
-COPY ./neuro_san/coded_tool[s] ./coded_tool[s] ${APP_SOURCE}/coded_tools
-
-# Copy application code and necessary files if we are running within the neuro-san repo
-# [n] allows this to not have to be there for client repo builds.
-COPY ./neuro_sa[n] ${APP_SOURCE}/neuro_san
-RUN chmod -R a+r ${APP_SOURCE}
+COPY ./registries ${APP_SOURCE}/registries
+COPY ./coded_tool[s] ${APP_SOURCE}/coded_tools
+COPY ./deploy/entrypoint.sh ${APP_SOURCE}/deploy/entrypoint.sh
+COPY ./deploy/logging.hocon ${APP_SOURCE}/deploy/logging.hocon
 
 # Set up the entry point for when the container is run
 USER ${USERNAME}
 WORKDIR ${APP_SOURCE}
 
 # RUN echo "$(pip show neuro-san | grep Location | awk '{print $2}')"
-# This value below comes from the above RUN command.
-# Cannot set ENV vars in Dockerfiles based on shell output within in-progress container build,
-# only from build args.
-ARG PACKAGE_INSTALL
-ENV PACKAGE_INSTALL=${PACKAGE_INSTALL}
-ENV PACKAGE_DEPLOY=${PACKAGE_INSTALL}/neuro_san/deploy
-ENV APP_ENTRYPOINT=${PACKAGE_DEPLOY}/entrypoint.sh
-
-ARG NEURO_SAN_VERSION
-
+# This value below comes from the above RUN command. Cannot set ENV vars in Dockerfiles based on shell output.
+ENV PACKAGE_INSTALL=/usr/local/lib/python3.13/site-packages
+ENV APP_ENTRYPOINT=${APP_SOURCE}/deploy/entrypoint.sh
 
 #
 # API Keys for LLM Access
@@ -154,12 +140,18 @@ ENV NVIDIA_API_KEY=""
 # Server configuration
 #
 
+# Point to the root folder of the app
+ENV PYTHONPATH=${APP_SOURCE}
+
 # Where to find the tool registry manifest file which lists all the agent hocon
 # files to serve up from this server instance.  To specify multiple manifest files,
 # simply use a space-separated list of manifest files.  Manifest dictionaries will
 # effectively be merged, where content coming from manifests later in the list
 # have precedence.
-ENV AGENT_MANIFEST_FILE=${APP_SOURCE}/registries/manifest.hocon
+# This particular Dockerfile is put together to support a server that hosts multiple users
+# and so we use the multiple manifest file aspect of the neuro-san server to turn off some networks
+# that are not appropriate for such a deployment. See manifest_multiuser_overlay.hocon for more info.
+ENV AGENT_MANIFEST_FILE="${APP_SOURCE}/registries/manifest.hocon ${APP_SOURCE}/registries/manifest_multiuser_overlay.hocon"
 
 # An llm_info hocon file with user-provided llm descriptions that are to be used
 # in addition to the neuro-san defaults.
@@ -178,7 +170,7 @@ ENV AGENT_TOOL_PATH=${APP_SOURCE}/coded_tools
 # as to how this file can be configured for your own needs.  Examples there are provided in YAML,
 # but these can be easily translated to JSON or HOCON (which we prefer).
 # Another good resource: https://docs.python.org/3/howto/logging-cookbook.html
-ENV AGENT_SERVICE_LOG_JSON=${PACKAGE_DEPLOY}/logging.hocon
+ENV AGENT_SERVICE_LOG_JSON=${APP_SOURCE}/deploy/logging.hocon
 
 # Threshold for logging.
 # See https://docs.python.org/3/library/logging.html#logging.Handler.setLevel
@@ -186,7 +178,7 @@ ENV AGENT_SERVICE_LOG_JSON=${PACKAGE_DEPLOY}/logging.hocon
 ENV AGENT_SERVICE_LOG_LEVEL="DEBUG"
 
 # The name of the service for health reporting purposes
-ENV AGENT_SERVER_NAME="neuro-san.Agent"
+ENV AGENT_SERVER_NAME="neuro-san-studio.Agent"
 
 # Name of the service as seen in logs
 ENV AGENT_SERVER_NAME_FOR_LOGS="Agent Server"
@@ -204,7 +196,7 @@ ENV AGENT_FORWARDED_REQUEST_METADATA="request_id user_id"
 ENV AGENT_HTTP_PORT=8080
 
 # Maximm number of requests that can be served at the same time
-ENV AGENT_MAX_CONCURRENT_REQUESTS 50
+ENV AGENT_MAX_CONCURRENT_REQUESTS=50
 
 # Number of requests served before the server shuts down in an orderly fashion.
 # This is useful for testing response handling in clusters with duplicated pods.
@@ -219,7 +211,7 @@ ENV AGENT_REQUEST_LIMIT=-1
 # with corresponding changes in manifest file.
 # Update will be done every AGENT_MANIFEST_UPDATE_PERIOD_SECONDS seconds;
 # if value is not specified or <= 0, no such dynamic updates will be executed.
-ENV AGENT_MANIFEST_UPDATE_PERIOD_SECONDS=0
+ENV AGENT_MANIFEST_UPDATE_PERIOD_SECONDS=5
 
 # By default, the HTTP service reports the neuro-san library pip version in its health-check response.
 # It is possible to add other libraries to those results by listing them within this env var
