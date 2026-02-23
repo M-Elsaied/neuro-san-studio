@@ -18,7 +18,7 @@ This agent is **disabled by default**. To enable and use it:
 
 Install the following dependencies:
 ```bash
-pip install -r coded_tools/news_sentiment_analysis/requirements.txt
+pip install newspaper3k==0.2.8 beautifulsoup4==4.13.4 nltk==3.9.1 vaderSentiment==3.3.2 backoff==2.2.1 lxml-html-clean==0.4.2 feedparser==6.0.11
 ```
 ### 2. Get API Keys
 
