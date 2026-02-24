@@ -77,7 +77,7 @@
             "propagate": false
         },
 
-        # Turn on logging for coded_tools
+        # Turn on debug logging for coded_tools
         "coded_tools": {
             "level": "DEBUG",
             "handlers": [
