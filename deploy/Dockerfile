@@ -22,7 +22,7 @@
 
 # Stage 1: Builder Stage - Use our python base image for installations
 # Set python image as base image
-FROM python:3.13-slim as builder
+FROM python:3.13-slim AS builder
 
 # Set the shell and options per hadolint recommendations
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -68,8 +68,7 @@ RUN \
     && mkdir -p ${APP_HOME}/.ssh \
     && chown -R ${USERNAME}: ${APP_HOME} \
     && chown -R ${USERNAME}: /usr/local/ \
-    && chown -R ${USERNAME}: /var/log \
-    && mkdir -p ${APP_SOURCE}
+    && chown -R ${USERNAME}: /var/log
 
 # Set up a place for the mount of secrets to happen
 RUN mkdir -p ${APP_HOME}/certs/aws \
@@ -211,7 +210,7 @@ ENV AGENT_REQUEST_LIMIT=-1
 # with corresponding changes in manifest file.
 # Update will be done every AGENT_MANIFEST_UPDATE_PERIOD_SECONDS seconds;
 # if value is not specified or <= 0, no such dynamic updates will be executed.
-ENV AGENT_MANIFEST_UPDATE_PERIOD_SECONDS=5
+ENV AGENT_MANIFEST_UPDATE_PERIOD_SECONDS=0
 
 # By default, the HTTP service reports the neuro-san library pip version in its health-check response.
 # It is possible to add other libraries to those results by listing them within this env var
@@ -279,7 +278,10 @@ ENV AGENT_HTTP_RESOURCES_MONITOR_INTERVAL=0
 # interface, if the agent network hocon file specifically allows it for the tool.
 # Update will be done every AGENT_TEMPORARY_NETWORK_UPDATE_PERIOD_SECONDS seconds;
 # if value is not specified or <= 0, no such dynamic updates will be executed.
-ENV AGENT_TEMPORARY_NETWORK_UPDATE_PERIOD_SECONDS=0
+# This particular sample deployment turns this on to 5 seconds to be able to show off the feature
+# in a multi-user environment, however most Neuro SAN deployments will want this set to 0
+# to disable the feature for safety.
+ENV AGENT_TEMPORARY_NETWORK_UPDATE_PERIOD_SECONDS=5
 
 # Optional URL describing how the server is to be referenced by the outside world.
 # This is useful when a server is behind a load-balancer as part of a larger cluster.
