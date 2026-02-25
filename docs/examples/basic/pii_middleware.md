@@ -13,7 +13,7 @@ how langchain's AgentMiddleware can be used to detect Personally Identifiable In
 
 ## Description
 
-The Hello World agent network provides a very simple example as to how one agent
+The PII Middleware agent network provides a very simple example as to how one agent
 can employ AgentMiddleware to detect PII in a chat stram.
 
 The idea is you give it a 7-digit phone number and a message to leave and it will
