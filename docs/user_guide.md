@@ -1330,6 +1330,13 @@ agent to interact with a CRM system.
 to a [Google Agentspace](https://cloud.google.com/agentspace/agentspace-enterprise/docs/overview) agent to interact with
 different data store connectors on google cloud.
 
+## Plugins
+
+Plugins are a way to extend the functionality of a Neuro SAN server largely for
+deployment-related use-cases. Note that plugins are never required for Neuro SAN to function.
+See [Plugins](./plugins.md) for more information.
+
+
 ## Test
 
 ### Unit test
