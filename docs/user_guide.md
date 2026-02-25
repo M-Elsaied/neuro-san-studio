@@ -1337,7 +1337,6 @@ Plugins are a way to extend the functionality of a Neuro SAN server largely for
 deployment-related use-cases. Note that plugins are never required for Neuro SAN to function.
 See [Plugins](./plugins.md) for more information.
 
-
 ## Test
 
 ### Unit test
