@@ -30,10 +30,12 @@ from coded_tools.agent_network_designer.agent_network_assembler import AgentNetw
 from coded_tools.agent_network_designer.agent_network_persistor import AgentNetworkPersistor
 from coded_tools.agent_network_designer.agent_network_persistor_factory import AgentNetworkPersistorFactory
 from coded_tools.agent_network_editor.constants import AGENT_NETWORK_DEFINITION
+from coded_tools.agent_network_editor.constants import AGENT_NETWORK_HOCON_TEXT
 from coded_tools.agent_network_editor.constants import AGENT_NETWORK_NAME
 from coded_tools.agent_network_editor.get_mcp_tool import GetMcpTool
 from coded_tools.agent_network_editor.get_subnetwork import GetSubnetwork
 from coded_tools.agent_network_editor.get_toolbox import GetToolbox
+from coded_tools.agent_network_editor.hocon_agent_network_assembler import HoconAgentNetworkAssembler
 
 # To use reservations, turn this environment variable to true and also
 # export AGENT_TEMPORARY_NETWORK_UPDATE_PERIOD_SECONDS=5
@@ -143,6 +145,18 @@ class PersistAgentNetwork(CodedTool):
 
         if isinstance(persisted_reference, list):
             sly_data["agent_reservations"] = persisted_reference
+
+        if isinstance(assembler, HoconAgentNetworkAssembler):
+            # We already have the HOCON content, no need to re-assemble.
+            sly_data[AGENT_NETWORK_HOCON_TEXT] = persisted_content
+        else:
+            # We don't yet have client-consumable HOCON content, so we need to re-assemble
+            # to send that back as a parting gift.
+            assembler = HoconAgentNetworkAssembler(DEMO_MODE)
+            hocon_text: str = assembler.assemble_agent_network(
+                network_def, top_agent_name, the_agent_network_name, sample_queries
+            )
+            sly_data[AGENT_NETWORK_HOCON_TEXT] = hocon_text
 
         logger.info(">>>>>>>>>>>>>>>>>>>DONE !!!>>>>>>>>>>>>>>>>>>")
         return (
