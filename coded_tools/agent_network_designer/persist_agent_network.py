@@ -58,6 +58,7 @@ class PersistAgentNetwork(CodedTool):
     - a list of down-chain agents (agents reporting to it)
     """
 
+    # pylint: disable=too-many-locals
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> str:
         """
         :param args: An argument dictionary whose keys are the parameters
