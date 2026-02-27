@@ -29,13 +29,13 @@ from neuro_san.internals.validation.network.url_network_validator import UrlNetw
 from coded_tools.agent_network_designer.agent_network_assembler import AgentNetworkAssembler
 from coded_tools.agent_network_designer.agent_network_persistor import AgentNetworkPersistor
 from coded_tools.agent_network_designer.agent_network_persistor_factory import AgentNetworkPersistorFactory
+from coded_tools.agent_network_designer.hocon_agent_network_assembler import HoconAgentNetworkAssembler
 from coded_tools.agent_network_editor.constants import AGENT_NETWORK_DEFINITION
 from coded_tools.agent_network_editor.constants import AGENT_NETWORK_HOCON_TEXT
 from coded_tools.agent_network_editor.constants import AGENT_NETWORK_NAME
 from coded_tools.agent_network_editor.get_mcp_tool import GetMcpTool
 from coded_tools.agent_network_editor.get_subnetwork import GetSubnetwork
 from coded_tools.agent_network_editor.get_toolbox import GetToolbox
-from coded_tools.agent_network_editor.hocon_agent_network_assembler import HoconAgentNetworkAssembler
 
 # To use reservations, turn this environment variable to true and also
 # export AGENT_TEMPORARY_NETWORK_UPDATE_PERIOD_SECONDS=5
