@@ -139,6 +139,7 @@ class TestIntegrationTestHocons(TestCase, FailFastParamMixin):
                 # These can be in any order.
                 # Ideally more basic functionality will come first.
                 # Barring that, try to stick to alphabetical order.
+                "industry/banking_ops_middleware/pii_redaction.hocon",
                 "industry/telco_network_support_test.hocon",
                 "industry/consumer_decision_assistant_comprehensive.hocon",
                 "industry/cpg_agents_test.hocon",
