@@ -33,7 +33,7 @@
     include "registries/aaosa.hocon",
 
     "metadata": {
-        "description": "Banking operations multi-agent system with production-ready middleware. Demonstrates PII redaction, summarization, model call limits, and model retry middleware applied to a realistic banking scenario. Based on the banking_ops agent network.",
+        "description": "Banking operations multi-agent system with production-ready middleware. Demonstrates PII redaction, summarization, model call limits, and human approval middleware applied to a realistic banking scenario. Based on the banking_ops agent network.",
         "tags": ["banking", "AAOSA", "middleware"],
         "sample_queries": [
             "Check the status of my account 4532-1234-5678-9012 and tell me the balance.",
