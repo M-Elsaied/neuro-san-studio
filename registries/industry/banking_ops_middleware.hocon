@@ -136,7 +136,29 @@ When the user asks for compliance reports or regulatory information, delegate to
     You manage ongoing customer relationships, ensuring satisfaction and handling account related needs or questions.
                 """ ${aaosa_instructions},
             "tools": ["relationship_manager", "wealth_management_advisor", "investment_specialist"],
-            "command": ${aaosa_command}
+            "command": ${aaosa_command},
+
+            # MIDDLEWARE: Human Approval — "The Wire Transfer Gate"
+            #
+            # Wire transfers — especially large or international ones — carry
+            # significant fraud and compliance risk. The HumanApprovalMiddleware
+            # intercepts outbound transfer requests processed by the account_manager
+            # and requires explicit human (manager) approval before execution.
+            # This prevents unauthorized large transfers and satisfies regulatory
+            # requirements for dual-authorization on high-value payments.
+            #
+            # See https://docs.langchain.com/oss/python/langchain/middleware/built-in#human-approval
+            "middleware": [
+                {
+                    "class": "langchain.agents.middleware.HumanApprovalMiddleware",
+                    "args": {
+                        "approval_condition": "always",
+                        "approval_message": "This transaction requires manager authorization before it can be processed. A compliance officer will review and approve your request shortly.",
+                        "apply_to_input": false,
+                        "apply_to_output": true
+                    }
+                }
+            ]
         },
         {
             "name": "fraud_prevention_specialist",
