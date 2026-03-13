@@ -37,6 +37,7 @@ processes the request internally, but the response must never echo back sensitiv
 is a PCI-DSS and privacy regulation requirement.
 
 **Solution:** Two `PIIMiddleware` instances on the front man agent:
+
 - One detects and redacts credit card numbers (16-digit patterns)
 - One detects and redacts SSN patterns (XXX-XX-XXXX)
 
@@ -110,11 +111,13 @@ Nothing special.
 ### PII Redaction
 
 **Human:**
+
 ```text
 Check the status of my account 4532-1234-5678-9012 and tell me the balance.
 ```
 
 **AI:**
+
 ```text
 I've looked up your account ending in [REDACTED_CREDIT_CARD]. Your current balance is $12,450.00.
 The account is in good standing with no pending transactions.
@@ -125,11 +128,13 @@ Note how the credit card number from the input is redacted in the output by the 
 ### Compliance Report Summarization
 
 **Human:**
+
 ```text
 Generate a compliance report for my checking account for the last 30 days covering Dodd-Frank and AML regulations.
 ```
 
 **AI:**
+
 ```text
 Here's your compliance summary:
 
@@ -146,6 +151,7 @@ instructions and SummarizationMiddleware condense it to a brief bullet-point sum
 ### Fraud Investigation
 
 **Human:**
+
 ```text
 I noticed three unauthorized charges on my account from different countries - $2,500 from Nigeria,
 $1,800 from Romania, and $950 from Indonesia, all within the last 48 hours.
@@ -157,6 +163,7 @@ within 15 LLM calls rather than looping indefinitely between the fraud team and 
 ### Wire Transfer Approval
 
 **Human:**
+
 ```text
 I need to wire $50,000 from my checking account to an international account in Switzerland.
 The beneficiary is Alpen Financial Group, IBAN CH93 0076 2011 6238 5295 7. Please process this today.
