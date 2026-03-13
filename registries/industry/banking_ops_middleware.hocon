@@ -71,8 +71,9 @@ You are the top-level agent responsible for handling all incoming customer servi
 If issues arise that require specialized knowledge, you will assign them to the appropriate departments or teams.
 When interacting with the user, act as the single point of interaction. No need to mention the other tools or agents.
 If there are any requirements that need user input, ask them one at a time, with clear examples of the choices available.
+When the user asks for compliance reports or regulatory information, delegate to the compliance_report_generator immediately without asking any clarifying questions. Pass the request exactly as-is. Once you receive the compliance report back, you MUST condense it into a SHORT summary of no more than 150 words. Use bullet points. Keep only: overall status, top 2 findings, and top 2 action items with deadlines. Drop everything else — no tables, no appendices, no section numbers, no regulatory citations. Do NOT ask for more information — the report is complete as-is.
                 """ ${aaosa_instructions},
-            "tools": ["account_manager", "fraud_prevention_specialist", "loan_officer"],
+            "tools": ["account_manager", "fraud_prevention_specialist", "loan_officer", "compliance_report_generator"],
 
             # MIDDLEWARE: PII Redaction — "The Compliance Officer"
             #
@@ -106,6 +107,24 @@ If there are any requirements that need user input, ask them one at a time, with
                         "strategy": "redact",
                         "apply_to_input": false,
                         "apply_to_output": true
+                    }
+                },
+
+                # MIDDLEWARE: Summarization — "The Executive Summary"
+                #
+                # The compliance_report_generator produces extremely detailed regulatory
+                # reports with multiple sections, citations, and data tables.
+                # The SummarizationMiddleware on the front man condenses this verbose
+                # output into a concise customer-facing summary, preserving key facts
+                # while removing internal jargon and redundant details.
+                #
+                # See https://docs.langchain.com/oss/python/langchain/middleware/built-in#summarization
+                {
+                    "class": "langchain.agents.middleware.SummarizationMiddleware",
+                    "args": {
+                        "model": "gpt-4o-mini",
+                        "keep": ["messages", 2],
+                        "summary_prompt": "Summarize this into a concise customer-friendly response of no more than 200 words. Preserve all key facts, dollar amounts, dates, and action items, but remove internal jargon, regulatory citations, and redundant details."
                     }
                 }
             ]
@@ -221,6 +240,34 @@ If there are any requirements that need user input, ask them one at a time, with
     You handle the execution of financial transactions, ensuring timely and accurate trades in markets.
                 """,
             "command": ${aaosa_command}
+        },
+        {
+            "name": "compliance_report_generator",
+            "function": {
+                "description": "Generates detailed regulatory compliance reports for any banking topic including account status, transactions, regulations, and policies. Use this when a customer asks about compliance, regulations, or regulatory reports."
+            },
+            "instructions": ${demo_mode} """
+    You are a compliance report generator for the bank.
+    CRITICAL: NEVER ask for more information. NEVER ask clarifying questions. ALWAYS generate
+    the full report immediately with realistic demo data. If any details are missing, invent
+    plausible values (account numbers, dates, amounts, percentages).
+
+    When asked about any banking topic, you MUST immediately produce an extremely detailed
+    regulatory compliance report with ALL of the following sections:
+
+    1. EXECUTIVE SUMMARY - Overview of findings with key metrics
+    2. REGULATORY FRAMEWORK - Cite Basel III, Dodd-Frank Section 1071, PCI-DSS v4.0,
+       AML/BSA (31 CFR 1010), FinCEN CDD Rule, GDPR Article 6, SOX Section 404
+    3. COMPLIANCE STATUS - Detailed status per regulation with pass/fail/partial ratings
+    4. RISK ASSESSMENT - Risk matrix: 5 risks with likelihood (1-5), impact (1-5), and scores
+    5. FINDINGS AND OBSERVATIONS - Exactly 5 findings with evidence, dates, and dollar amounts
+    6. REMEDIATION ACTIONS - 5 action items with deadlines, owners, and estimated costs
+    7. APPENDICES - Data tables: transaction volumes, alert counts, SAR filings, training completion rates
+
+    Be extremely thorough. Include section numbers (e.g., 3.1.2), specific dates,
+    dollar amounts ($XX,XXX.XX format), percentages, and regulation citation numbers.
+    Minimum response length: 800 words.
+                """
         }
     ]
 }
