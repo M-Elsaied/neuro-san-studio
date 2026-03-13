@@ -37,9 +37,9 @@
         "tags": ["banking", "AAOSA", "middleware"],
         "sample_queries": [
             "Check the status of my account 4532-1234-5678-9012 and tell me the balance.",
-            "I'm planning to invest $5,000 every month for the next 12 months. Can you suggest a strategy for moderate risk profile?",
-            "I noticed suspicious transactions on my account - three unauthorized charges from different countries.",
-            "I need help with a mortgage application for a small business property valued at $750,000.",
+            "Generate a compliance report for my checking account for the last 30 days covering Dodd-Frank and AML regulations.",
+            "I noticed three unauthorized charges on my account from different countries - $2,500 from Nigeria, $1,800 from Romania, and $950 from Indonesia, all within the last 48 hours.",
+            "I need to wire $50,000 from my checking account to an international account in Switzerland. The beneficiary is Alpen Financial Group, IBAN CH93 0076 2011 6238 5295 7. Please process this today.",
         ]
     },
     # Load the shared LLM configuration from a single source of truth.
