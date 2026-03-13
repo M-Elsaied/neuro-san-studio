@@ -1,0 +1,64 @@
+
+# Copyright © 2025-2026 Cognizant Technology Solutions Corp, www.cognizant.com.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# END COPYRIGHT
+
+# This file defines everything necessary for a data-driven test.
+# The schema specifications for this file are documented here:
+# https://github.com/cognizant-ai-lab/neuro-san/blob/main/docs/test_case_hocon_reference.md
+
+{
+    # Describes what agent to test against.
+    "agent": "industry/banking_ops_middleware",
+
+    # Timeout for the entire test.
+    "timeout_in_seconds": 240,
+
+    # success_ratio is useful for passing to the assessor to find out why
+    # a test is intermittently failing.
+    "success_ratio": "1/1",
+
+    # Connect to the agent via a server
+    "connections": ["direct"],
+
+    # Interactions are a series of dictionaries with request elements paired with
+    # descriptions of response checks.
+    "interactions": [
+        {
+            # This query triggers the compliance_report_generator, which produces
+            # an extremely verbose regulatory report (800+ words). The front man's
+            # instructions then condense it into a short bullet-point summary
+            # (≤150 words), while the SummarizationMiddleware manages conversation
+            # history compression for subsequent turns.
+            "text": """
+Generate a compliance report for my checking account for the last 30 days covering Dodd-Frank and AML regulations.
+""",
+
+            # The response block treats how we are going to test what comes back
+            "response": {
+
+                # Text block says how we are going to examine the text of the response.
+                "text": {
+
+                    # keywords says we are going to look for exact matches for each
+                    # element in a list of strings. All should show up in order to pass.
+                    # Using "status" and "action" which reliably appear in any
+                    # compliance summary regardless of capitalization patterns.
+                    "keywords": ["status", "action"],
+                }
+            }
+        }
+    ]
+}
