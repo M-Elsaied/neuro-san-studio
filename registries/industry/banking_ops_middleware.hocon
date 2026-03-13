@@ -214,7 +214,27 @@ When the user asks for compliance reports or regulatory information, delegate to
     You investigate and manage complex or high-value fraud cases, coordinating with internal teams and external agencies as needed.
                 """ ${aaosa_instructions},
             "tools": ["security_analyst"],
-            "command": ${aaosa_command}
+            "command": ${aaosa_command},
+
+            # MIDDLEWARE: Model Call Limit — "The Cost Controller"
+            #
+            # Fraud investigations are open-ended by nature — the fraud_investigation_team
+            # calls the security_analyst, who reasons through attack vectors, who may
+            # trigger further analysis. Without guardrails, this recursive investigation
+            # could burn through 50+ LLM calls. The ModelCallLimitMiddleware caps the
+            # investigation at 15 model calls per invocation. When the limit is reached,
+            # the agent gracefully wraps up with whatever findings it has.
+            #
+            # See https://docs.langchain.com/oss/python/langchain/middleware/built-in#model-call-limit
+            "middleware": [
+                {
+                    "class": "langchain.agents.middleware.ModelCallLimitMiddleware",
+                    "args": {
+                        "run_limit": 15,
+                        "exit_behavior": "end"
+                    }
+                }
+            ]
     },
         {
             "name": "security_analyst",
