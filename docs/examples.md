@@ -419,6 +419,14 @@ collaborate to deliver bank policy-compliant responses to users, with the system
 
 **Tags:** `AAOSA`
 
+### Banking Operations with Middleware
+
+[Banking Operations with Middleware](examples/industry/banking_ops_middleware.md) builds on the Banking Operations network
+by adding production-ready LangChain middleware layers: PII redaction, summarization, model call limits, and human approval.
+Each middleware addresses a real-world production concern with a clear storyline.
+
+**Tags:** `AAOSA`, `middleware`
+
 ### CPG Operations Management
 
 [CPG Operations Management](examples/industry/cpg_agents.md) is a comprehensive enterprise system that coordinates global
