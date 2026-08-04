@@ -1,0 +1,157 @@
+{
+  "_comment": [
+    "Deployment profile TEMPLATE. Placeholders only — never commit a filled-in copy.",
+    "Mount the real file from a ConfigMap and point SN_PROFILE_FILE at it, or override",
+    "individual keys with SN_PROFILE__<path>__<key> environment variables.",
+    "Secrets are NOT stored here: this file names the environment variables that hold",
+    "them, so the ConfigMap stays free of secret material and the Secret stays the",
+    "only place values live."
+  ],
+
+  "base_url": "REPLACE_WITH_GATEWAY_BASE_URL",
+
+  "auth": {
+    "_comment": [
+      "style: 'standard' is RFC 6749 client-credentials with Basic built from id and",
+      "secret. 'preencoded' is the variant flow: an opaque pre-encoded Basic",
+      "credential, with id and secret also repeated in the body. One live token call",
+      "decides which a given gateway wants; the answer is this value, not a code change."
+    ],
+    "style": "standard",
+    "token_url": "REPLACE_WITH_TOKEN_ENDPOINT_URL",
+
+    "client_id_env": "SN_CLIENT_ID",
+    "client_secret_env": "SN_CLIENT_SECRET",
+    "preencoded_credential_env": "SN_GW_CREDENTIAL",
+
+    "secret_body_key": "client_secret",
+    "send_id_in_body": false,
+    "percent_encode_credentials": true,
+    "scope": null,
+
+    "_extra_headers_comment": [
+      "Some gateways require an extra per-call header. Give it here as a literal, or",
+      "as 'env:VAR_NAME' to resolve from the environment. Nothing gateway-specific is",
+      "named in the package itself."
+    ],
+    "extra_headers": {}
+  },
+
+  "operations": {
+    "_comment": [
+      "Where each logical operation goes in THIS deployment. '{table}' is substituted",
+      "from the entity map. '{record}' is optional: include it when the gateway",
+      "addresses the record in the path, omit it when the identifier belongs in the",
+      "body. The package assumes neither.",
+      "Method is configured, not assumed — update verbs differ between gateways."
+    ],
+    "read": {
+      "method": "GET",
+      "path": "/REPLACE_WITH_READ_PATH/{table}",
+      "enabled": true
+    },
+    "update": {
+      "method": "REPLACE_WITH_UPDATE_METHOD",
+      "path": "/REPLACE_WITH_UPDATE_PATH/{table}",
+      "enabled": true
+    },
+    "create": {
+      "_comment": [
+        "Disabled until a create endpoint is confirmed in writing.",
+        "base_url (optional, any operation): overrides the profile-level base for",
+        "THIS operation only. Needed when one operation lives on a different host",
+        "or API version than the rest of the gateway - the only field-proven",
+        "create endpoint does exactly that. Omit it when the shared base applies."
+      ],
+      "method": "POST",
+      "path": "/REPLACE_WITH_CREATE_PATH/{table}",
+      "base_url": "REPLACE_OR_REMOVE_IF_SAME_HOST",
+      "enabled": false
+    }
+  },
+
+  "entities": {
+    "_comment": [
+      "Logical name -> real table, plus deny-by-default field allow-lists.",
+      "A field absent from read_fields is never requested; a field absent from",
+      "write_fields can never be written, whatever the model asks for.",
+      "Leave write_fields empty to make an entity strictly read-only."
+    ],
+    "request": {
+      "table": "REPLACE_WITH_TABLE_NAME",
+      "identifier_field": "sys_id",
+      "display_field": "number",
+      "read_fields": [
+        "sys_id",
+        "number",
+        "short_description",
+        "state",
+        "priority",
+        "assigned_to",
+        "opened_at",
+        "sys_updated_on"
+      ],
+      "write_fields": [
+        "work_notes"
+      ],
+
+      "_coded_fields_comment": [
+        "Field -> {stored code: human label}, for fields that store codes.",
+        "Used in BOTH directions: codes become labels on read, labels become codes",
+        "on write. Declare these. A code handed to a language model without its",
+        "meaning does not get reported as a code - it gets a meaning invented for it,",
+        "and inconsistently: the same code was rendered 'New' on one run and 'Open'",
+        "on the next. An undeclared code is tagged '<unmapped code N>' rather than",
+        "passed through bare, so the model repeats it instead of explaining it."
+      ],
+      "coded_fields": {
+        "state": {
+          "1": "REPLACE_WITH_LABEL_FOR_CODE_1",
+          "2": "REPLACE_WITH_LABEL_FOR_CODE_2"
+        }
+      }
+    }
+  },
+
+  "params": {
+    "_comment": "Wire names for query parameters. Defaults suit ServiceNow-style APIs.",
+    "query": "sysparm_query",
+    "fields": "sysparm_fields",
+    "limit": "sysparm_limit",
+    "offset": "sysparm_offset",
+    "display": "sysparm_display_value",
+    "exclude_reference_link": "sysparm_exclude_reference_link"
+  },
+
+  "limits": {
+    "default_page": 10,
+    "max_page": 25,
+    "timeout_seconds": 30,
+    "connect_timeout_seconds": 10,
+    "max_retries": 2,
+    "backoff_base_seconds": 0.5,
+    "breaker_threshold": 5,
+    "breaker_reset_seconds": 30,
+    "max_concurrent": 8
+  },
+
+  "gate": {
+    "_comment": [
+      "keys_env names an environment variable holding a comma-separated ordered list",
+      "of HMAC signing keys. The first signs; all of them verify, which makes rotation",
+      "zero-downtime. Sourcing from the secret manager is required: generating a key",
+      "per process appears to work on one replica and silently fails as soon as a",
+      "change is proposed on one pod and committed on another.",
+      "auto_approve_fields is empty by default. Nothing bypasses the gate unless a",
+      "deployment deliberately opts a low-risk journal field in."
+    ],
+    "keys_env": "SN_GATE_KEYS",
+    "ttl_seconds": 300,
+    "auto_approve_fields": []
+  },
+
+  "correlation_field": null,
+  "_correlation_field_comment": "Optional field on the record where this package stamps the correlation id, so the agent-side trail joins to the system-of-record side. Leave null if no such field exists.",
+
+  "verify_tls": true
+}

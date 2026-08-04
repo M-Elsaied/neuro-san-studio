@@ -126,6 +126,7 @@
     # To use this agent network, start by installing the required package:
     #     pip install pymupdf >= 1.25.5
     "tools/pdf_rag.hocon": false,
+    "tools/servicenow.hocon": false,
     
     # File system-backed long-term memory tool (per-agent): CRUD + keyword search.
     # Supports two backends: JSON or Markdown.
