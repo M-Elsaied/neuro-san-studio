@@ -18,6 +18,7 @@ table, do exactly what it says and touch nothing else.
 
 | I want to… | Change this | Python? |
 |---|---|---|
+| **Prove the connection works, before anything agent-shaped** | `PYTHONPATH=. python coded_tools/tools/servicenow/check_connection.py` — profile → credentials → token → one read, stopping at the first failure with a named remedy. `--try-both` reports which auth flow the gateway accepts; `--record REQ...` looks up one record. Needs no server, no LLM key. | no |
 | Run the tests | `pytest -o addopts= tests/coded_tools/tools/servicenow -q` | no |
 | Run the local demo | §3 below — two commands | no |
 | **Point at a real gateway** | Copy `coded_tools/tools/servicenow/profile.example.json`, fill it, mount it, set `SN_PROFILE_FILE` to its path | **no** |
