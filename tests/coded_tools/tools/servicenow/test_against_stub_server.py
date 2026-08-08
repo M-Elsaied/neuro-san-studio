@@ -33,9 +33,9 @@ from coded_tools.tools.servicenow.demo.stub_gateway import ISSUED_TOKEN
 from coded_tools.tools.servicenow.demo.stub_gateway import StubGateway
 
 STUB_ENV: Dict[str, str] = {
-    "SN_STUB_CLIENT_ID": "stub-client-id",
-    "SN_STUB_CLIENT_SECRET": "stub-client-secret",
-    "SN_STUB_GATE_KEYS": "stub-signing-key",
+    "SN_CLIENT_ID": "stub-client-id",
+    "SN_CLIENT_SECRET": "stub-client-secret",
+    "SN_GATE_KEYS": "stub-signing-key",
 }
 
 

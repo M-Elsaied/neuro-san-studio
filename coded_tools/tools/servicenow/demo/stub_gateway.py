@@ -222,8 +222,10 @@ class StubGateway:
             "auth": {
                 "style": "standard",
                 "token_url": f"{self.base_url}{TOKEN_PATH}",
-                "client_id_env": "SN_STUB_CLIENT_ID",
-                "client_secret_env": "SN_STUB_CLIENT_SECRET",
+                # Deliberately the package defaults, so ONE .env serves the demo,
+                # the checker, the server and (via Secret) the cluster alike.
+                "client_id_env": "SN_CLIENT_ID",
+                "client_secret_env": "SN_CLIENT_SECRET",
             },
             "operations": {
                 "read": {"method": "GET", "path": "/read/{table}"},
@@ -240,7 +242,7 @@ class StubGateway:
             "limits": {"default_page": 5, "max_page": 10, "max_retries": 1,
                        "backoff_base_seconds": 0.0, "timeout_seconds": 5,
                        "connect_timeout_seconds": 5},
-            "gate": {"keys_env": "SN_STUB_GATE_KEYS", "ttl_seconds": 300},
+            "gate": {"keys_env": "SN_GATE_KEYS", "ttl_seconds": 300},
             "correlation_field": "u_correlation",
         }
 

@@ -93,9 +93,6 @@ def main() -> int:
             "priority": {"1": "Critical", "2": "High", "3": "Moderate", "4": "Low"},
         },
     }
-    profile["auth"]["client_id_env"] = "SN_DEMO_CLIENT_ID"
-    profile["auth"]["client_secret_env"] = "SN_DEMO_CLIENT_SECRET"
-    profile["gate"]["keys_env"] = "SN_DEMO_GATE_KEYS"
 
     PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     PROFILE_PATH.write_text(json.dumps(profile, indent=2), encoding="utf-8")

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict
 from typing import Optional
 from unittest import TestCase
+from unittest.mock import patch
 
 from coded_tools.tools.servicenow import profile as profile_module
 from coded_tools.tools.servicenow import transport as transport_module
@@ -40,8 +41,8 @@ class TestCheckConnection(TestCase):
         self._profile_path = handle.name
 
         for name, value in (("SN_PROFILE_FILE", self._profile_path),
-                            ("SN_STUB_CLIENT_ID", "check-id"),
-                            ("SN_STUB_CLIENT_SECRET", "check-secret")):
+                            ("SN_CLIENT_ID", "check-id"),
+                            ("SN_CLIENT_SECRET", "check-secret")):
             self._saved[name] = os.environ.get(name)
             os.environ[name] = value
 
@@ -65,8 +66,13 @@ class TestCheckConnection(TestCase):
         :return: (exit code, captured stdout)
         """
         buffer = io.StringIO()
-        with redirect_stdout(buffer):
-            code = main(["--quiet", *argv])
+        # Autoload is disabled here: a developer following the README keeps real
+        # SN_* values in their repo .env, and letting the checker read it would
+        # quietly satisfy the missing-credential scenarios these tests stage.
+        with patch("coded_tools.tools.servicenow.check_connection."
+                   "load_dotenv_if_present", return_value=None):
+            with redirect_stdout(buffer):
+                code = main(["--quiet", *argv])
         return code, buffer.getvalue()
 
     def test_healthy_path_passes_every_step(self):
@@ -88,10 +94,10 @@ class TestCheckConnection(TestCase):
         self.assertIn("no record matched", out)
 
     def test_missing_credential_named_never_printed(self):
-        os.environ.pop("SN_STUB_CLIENT_SECRET", None)
+        os.environ.pop("SN_CLIENT_SECRET", None)
         code, out = self.run_checker()
         self.assertEqual(code, 1)
-        self.assertIn("SN_STUB_CLIENT_SECRET", out,
+        self.assertIn("SN_CLIENT_SECRET", out,
                       "The failing variable must be named so the user knows "
                       "what to export.")
         # Variable NAMES are named; credential VALUES never appear.
@@ -129,3 +135,36 @@ class TestCheckConnection(TestCase):
         code, out = self.run_checker()
         self.assertEqual(code, 0)
         self.assertNotIn("stub-issued-token", out)
+
+
+class TestDotenvAutoload(TestCase):
+    """The loader follows launcher semantics: fill gaps, never override."""
+
+    def test_fills_missing_and_never_overrides(self):
+        from coded_tools.tools.servicenow.check_connection import load_dotenv_if_present
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / ".env"
+            env_file.write_text(
+                'SN_AUTOLOAD_A="from-file"\nSN_AUTOLOAD_B="from-file"\n',
+                encoding="utf-8")
+            saved = {k: os.environ.get(k) for k in ("SN_AUTOLOAD_A", "SN_AUTOLOAD_B")}
+            os.environ["SN_AUTOLOAD_A"] = "from-shell"
+            os.environ.pop("SN_AUTOLOAD_B", None)
+            try:
+                loaded = load_dotenv_if_present(env_file)
+                self.assertEqual(loaded, str(env_file))
+                self.assertEqual(os.environ["SN_AUTOLOAD_A"], "from-shell",
+                                 "Shell values must always win.")
+                self.assertEqual(os.environ["SN_AUTOLOAD_B"], "from-file",
+                                 "Gaps must be filled from the file.")
+            finally:
+                for key, value in saved.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+    def test_absent_file_is_a_quiet_no_op(self):
+        from coded_tools.tools.servicenow.check_connection import load_dotenv_if_present
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIsNone(load_dotenv_if_present(Path(folder) / ".env"))

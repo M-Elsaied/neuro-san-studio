@@ -15,7 +15,11 @@ failure later is in the agent layer; if this fails, nothing above it can work.
 It exercises the package's real modules, not a parallel implementation, so a
 pass here is evidence about the actual code path.
 
-Usage (with SN_PROFILE_FILE and the credential env vars set):
+Configuration comes from the environment, and — for developer convenience —
+from a repo-root `.env` file, read exactly the way the studio launcher reads
+it: values already in the shell always win. So the same `.env` that serves
+`python run.py` serves this checker; in a cluster there is no `.env` and the
+variables arrive from the Secret.
 
     PYTHONPATH=. python coded_tools/tools/servicenow/check_connection.py
     PYTHONPATH=. python coded_tools/tools/servicenow/check_connection.py --try-both
@@ -60,6 +64,36 @@ from coded_tools.tools.servicenow.transport import Gateway  # noqa: E402
 PASS = "[PASS]"
 FAIL = "[FAIL]"
 SKIP = "[----]"
+
+
+def load_dotenv_if_present(path: Optional[Path] = None) -> Optional[str]:
+    """
+    Load a repo-root `.env` with launcher semantics: shell values always win.
+
+    Exists so the one `.env` a developer already maintains for `python run.py`
+    also feeds this checker — without it, credentials placed in `.env` were
+    visible to the server but invisible here, a first-day stumble for exactly
+    the person this script exists to help.
+
+    :param path: Override of the file location; defaults to the repo root `.env`.
+    :return: The path loaded, or None when no `.env` exists.
+    """
+    candidate = path if path is not None else _REPO_ROOT / ".env"
+    if not candidate.is_file():
+        return None
+    try:
+        from dotenv import load_dotenv  # pylint: disable=import-outside-toplevel
+        load_dotenv(candidate, override=False)
+    except ImportError:
+        # Minimal fallback so the checker works even outside the full studio
+        # environment. Same rule: never override what the shell already set.
+        for line in candidate.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.partition("=")
+            os.environ.setdefault(name.strip(), value.strip().strip('"').strip("'"))
+    return str(candidate)
 
 
 def say(status: str, step: str, detail: str = "") -> None:
@@ -224,6 +258,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print("ServiceNow connection check")
     print("---------------------------")
+
+    loaded = load_dotenv_if_present()
+    if loaded:
+        print(f"  (.env loaded from {loaded}; values already in the shell win)")
 
     profile = check_profile()
     if profile is None:

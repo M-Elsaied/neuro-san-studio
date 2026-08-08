@@ -55,31 +55,29 @@ Before any agent, server or LLM key: run the connection check. It proves
 a named remedy. Exit code 0 = the approach works; anything failing later is
 agent configuration, not connectivity.
 
+**Where configuration comes from:** the environment. For local convenience the
+checker (and the studio launcher) also read a repo-root **`.env`** — shell
+values always win, and in a cluster there is no `.env`: the same variables
+arrive from a Kubernetes Secret. `.env.example` documents every `SN_*` variable
+with demo-ready values; copy its ServiceNow block into your `.env` once and
+every local flow below just works.
+
 ### Option A — no gateway yet? Try it against the bundled fake one
 
-Terminal 1 (starts a fake ServiceNow on port 8099 and writes a matching profile):
+Step 1 — add the ServiceNow block from `.env.example` to your `.env`
+(uncommented; the demo values are fine as-is).
+
+Step 2 — terminal 1: start the fake ServiceNow (port 8099; it also writes the
+matching profile file your `.env` points at):
 
 ```bash
 PYTHONPATH=. python coded_tools/tools/servicenow/demo/run_stub_gateway.py
 ```
 
-Terminal 2:
-
-```powershell
-# PowerShell
-$env:PYTHONPATH             = (Get-Location).Path
-$env:SN_PROFILE_FILE        = "coded_tools\tools\servicenow\demo\profile.local.json"
-$env:SN_STUB_CLIENT_ID      = "demo-id"
-$env:SN_STUB_CLIENT_SECRET  = "demo-secret"
-python coded_tools\tools\servicenow\check_connection.py
-```
+Step 3 — terminal 2: run the check. Nothing to export — it reads your `.env`:
 
 ```bash
-# bash
-export PYTHONPATH=. \
-       SN_PROFILE_FILE=coded_tools/tools/servicenow/demo/profile.local.json \
-       SN_STUB_CLIENT_ID=demo-id SN_STUB_CLIENT_SECRET=demo-secret
-python coded_tools/tools/servicenow/check_connection.py
+PYTHONPATH=. python coded_tools/tools/servicenow/check_connection.py
 ```
 
 Expected:
@@ -97,7 +95,8 @@ All checks passed.
 
 1. Copy `profile.example.json`, fill in the real base URL, token URL, paths and
    table names, and save it somewhere OUTSIDE the repo.
-2. Set three variables and run:
+2. Point the same `SN_*` variables at the real thing — in your `.env` locally,
+   or as shell exports (shell wins over `.env`):
 
 ```bash
 export SN_PROFILE_FILE=/path/to/your/profile.json
@@ -134,7 +133,7 @@ what it says and touch nothing else.
 | Make a table read-only | Set its `write_fields` to `[]` | no |
 | Fix wrong state/priority wording in answers | `entities.<name>.coded_fields` — code→label maps from the instance's choice lists | no |
 | Serve the network | `registries/tools/manifest.hocon`: flip `"tools/servicenow.hocon"` to `true` | no |
-| Change credentials | The Secret behind `SN_CLIENT_ID` / `SN_CLIENT_SECRET` (and `SN_GW_CREDENTIAL` for the variant flow) | no |
+| Change credentials | Locally: `SN_CLIENT_ID` / `SN_CLIENT_SECRET` in `.env` (see `.env.example`). Cluster: the Secret behind the same names (+ `SN_GW_CREDENTIAL` for the variant flow) | no |
 | Rotate gate signing keys | `SN_GATE_KEYS` = comma-separated list; **new key first**, old keys stay until tokens expire (5 min) | no |
 | Switch token flow after `--try-both` | `auth.style`: `standard` or `preencoded` | no |
 | Hotfix one profile key without reissuing the file | Env var, e.g. `SN_PROFILE__operations__read__path=/new/{table}` | no |
