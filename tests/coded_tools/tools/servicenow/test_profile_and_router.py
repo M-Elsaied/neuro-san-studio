@@ -78,19 +78,30 @@ class TestProfileValidation(TestCase):
 class TestRouterValidation(TestCase):
     """The router cross-checks the profile against the shapes that exist in code."""
 
-    def test_unknown_operation_in_profile_is_refused(self):
+    def test_arbitrary_operation_names_are_allowed(self):
+        # Operations are profile-defined; a new logical name of a known shape is
+        # valid without any code change.
         document: Dict[str, Any] = sample_document()
-        document["operations"]["teleport"] = {"method": "GET", "path": "/x/{table}"}
-        with self.assertRaises(ProfileError) as caught:
-            Router(build_profile(document))
-        self.assertIn("teleport", str(caught.exception))
+        document["operations"]["read_related"] = {
+            "method": "GET", "path": "/related/{table}", "shape": "query"}
+        route = Router(build_profile(document)).resolve("read_related", "request")
+        self.assertTrue(route.url.endswith("/related/sample_request_table"))
 
-    def test_entity_scoped_path_must_carry_the_table_placeholder(self):
+    def test_unknown_shape_is_refused(self):
+        document: Dict[str, Any] = sample_document()
+        document["operations"]["read"]["shape"] = "teleport"
+        with self.assertRaises(ProfileError) as caught:
+            build_profile(document)
+        self.assertIn("shape", str(caught.exception))
+
+    def test_fixed_path_without_table_resolves_as_non_entity_scoped(self):
+        # A path with no {table} is a valid fixed endpoint, not an error.
         document: Dict[str, Any] = sample_document()
         document["operations"]["read"]["path"] = "/read/fixed"
-        with self.assertRaises(ProfileError) as caught:
-            Router(build_profile(document))
-        self.assertIn("{table}", str(caught.exception))
+        route = Router(build_profile(document)).resolve("read", "request")
+        self.assertFalse(route.spec.entity_scoped)
+        self.assertTrue(route.url.endswith("/read/fixed"))
+        self.assertNotIn("sample_request_table", route.url)
 
     def test_auto_approve_field_no_entity_can_write_is_refused(self):
         document: Dict[str, Any] = sample_document()

@@ -90,20 +90,62 @@ class AuthConfig:
     extra_headers: Mapping[str, str] = field(default_factory=dict)
 
 
+#: Wire shapes the code knows how to build. Declared in the profile per operation;
+#: only these are valid. Adding a genuinely new shape is the one thing that needs
+#: code — everything else (new endpoint, new table, new param set) is config.
+VALID_SHAPES: Tuple[str, ...] = ("query", "body")
+
+#: Logical query-parameter names an operation may list in ``query_params``. The
+#: profile's ``params`` block maps each of these to its wire name (sysparm_*).
+KNOWN_QUERY_PARAMS: Tuple[str, ...] = (
+    "display", "query", "fields", "limit", "offset", "exclude_reference_link",
+)
+
+#: What a query operation sends when it does not say otherwise. Kept minimal on
+#: purpose: some gateways accept only a small parameter set and error on anything
+#: beyond it, so operations that support more opt in explicitly rather than the
+#: package assuming a full parameter set is safe.
+DEFAULT_QUERY_PARAMS: Tuple[str, ...] = ("display", "query")
+
+
 @dataclass(frozen=True)
 class OperationConfig:
-    """Where a logical operation goes in *this* deployment."""
+    """
+    Where a logical operation goes in *this* deployment, and how it is shaped.
+
+    Everything an endpoint needs is declared here, so onboarding a new endpoint of
+    a known shape is a profile edit with no code change.
+    """
 
     method: str
     path: str
     enabled: bool = True
-    # Optional override of the profile-level base URL, for the gateway topology
-    # that actually exists in the field: the one proven create endpoint lives on a
-    # different host AND a different API version than the reads. Without this, the
-    # real inventory cannot be expressed at all — a gap found by asking "can this
-    # onboard the documented endpoints", not by any test, because every test
-    # inherited the single-base assumption.
+    # Optional per-operation override of the profile-level base URL, for deployments
+    # where an operation lives on a different host or API version than the rest.
+    # Applies only when set.
     base_url: Optional[str] = None
+    # Which wire shape builds this call: "query" (params on a GET) or "body" (JSON
+    # on a write). Reserved for later: multipart, binary.
+    shape: str = "query"
+    # Approval gate + retry policy. Defaults follow the method (GET is safe to
+    # repeat and needs no gate; writes are gated and never auto-retried) but a
+    # deployment can override either.
+    gated: Optional[bool] = None
+    retryable: Optional[bool] = None
+    # For "query" operations: exactly which logical params to send. Lets a profile
+    # match a gateway that supports only a limited parameter set, instead of the
+    # package sending a fixed set that some gateways reject.
+    query_params: Tuple[str, ...] = DEFAULT_QUERY_PARAMS
+
+    @property
+    def is_gated(self) -> bool:
+        """:return: Whether this operation requires the approval gate."""
+        return self.gated if self.gated is not None else self.method.upper() != "GET"
+
+    @property
+    def is_retryable(self) -> bool:
+        """:return: Whether this operation is safe to auto-retry."""
+        return self.retryable if self.retryable is not None else self.method.upper() == "GET"
 
 
 @dataclass(frozen=True)
@@ -344,11 +386,37 @@ def _build_operations(document: Mapping[str, Any]) -> Dict[str, OperationConfig]
             raise ProfileError(f"operations.{name}.base_url must be a non-empty string "
                                "when present.",
                                invalid_key=f"operations.{name}.base_url")
+
+        shape: str = str(raw.get("shape", "query")).lower()
+        if shape not in VALID_SHAPES:
+            raise ProfileError(
+                f"operations.{name}.shape must be one of {list(VALID_SHAPES)}, got "
+                f"'{shape}'. A genuinely new shape needs code, not just config.",
+                invalid_key=f"operations.{name}.shape")
+
+        raw_params: Any = raw.get("query_params", list(DEFAULT_QUERY_PARAMS))
+        if not isinstance(raw_params, (list, tuple)):
+            raise ProfileError(f"operations.{name}.query_params must be a list.",
+                               invalid_key=f"operations.{name}.query_params")
+        query_params: Tuple[str, ...] = tuple(str(item) for item in raw_params)
+        unknown = sorted(set(query_params) - set(KNOWN_QUERY_PARAMS))
+        if unknown:
+            raise ProfileError(
+                f"operations.{name}.query_params names params this package does not "
+                f"know: {unknown}. Known: {sorted(KNOWN_QUERY_PARAMS)}.",
+                invalid_key=f"operations.{name}.query_params")
+
+        gated = raw.get("gated")
+        retryable = raw.get("retryable")
         operations[name] = OperationConfig(
             method=str(_require(raw, "method", f"operations.{name}")).upper(),
             path=str(_require(raw, "path", f"operations.{name}")),
             enabled=True,
             base_url=override.rstrip("/") if override else None,
+            shape=shape,
+            gated=bool(gated) if gated is not None else None,
+            retryable=bool(retryable) if retryable is not None else None,
+            query_params=query_params,
         )
     return operations
 

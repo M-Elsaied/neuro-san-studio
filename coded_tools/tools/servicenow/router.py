@@ -21,6 +21,7 @@ from dataclasses import replace
 from enum import Enum
 from typing import Mapping
 from typing import Optional
+from typing import Tuple
 from urllib.parse import quote
 
 from coded_tools.tools.servicenow.errors import PolicyDenied
@@ -50,29 +51,43 @@ class Shape(Enum):
 @dataclass(frozen=True)
 class OperationSpec:
     """
-    What an operation *is* — fixed in code, identical in every deployment.
+    What an operation *is*, derived from its profile entry at resolve time.
 
-    :param retryable: True only for operations that are safe to repeat. Writes are
-                      never retryable: an asynchronous create that returns no
-                      reliable reference will duplicate records under blind retry.
+    Operations are declared in the deployment profile rather than fixed in code, so
+    adding an endpoint is a configuration change. Code supplies only the *shape*
+    implementations, not the list of operations.
+
+    :param retryable: True only for operations safe to repeat. Writes are never
+                      auto-retried: an asynchronous create that returns no reliable
+                      reference could duplicate records under blind retry.
+    :param entity_scoped: True when the path addresses a table (`{table}` present);
+                          False for fixed paths that do not target a table.
+    :param query_params: For query-shape operations, exactly which logical params
+                         to send.
     """
 
     name: str
     shape: Shape
     gated: bool
     retryable: bool
-    entity_scoped: bool = True
+    entity_scoped: bool
+    query_params: Tuple[str, ...]
 
-
-OPERATIONS: Mapping[str, OperationSpec] = {
-    "read": OperationSpec("read", Shape.QUERY, gated=False, retryable=True),
-    "update": OperationSpec("update", Shape.BODY, gated=True, retryable=False),
-    "create": OperationSpec("create", Shape.BODY, gated=True, retryable=False),
-    "download_attachment": OperationSpec("download_attachment", Shape.BINARY,
-                                         gated=False, retryable=True),
-    "upload_attachment": OperationSpec("upload_attachment", Shape.MULTIPART,
-                                       gated=True, retryable=False),
-}
+    @classmethod
+    def from_config(cls, name: str, config: OperationConfig) -> "OperationSpec":
+        """
+        :param name: Logical operation name.
+        :param config: Its profile entry.
+        :return: The derived spec.
+        """
+        return cls(
+            name=name,
+            shape=Shape(config.shape),
+            gated=config.is_gated,
+            retryable=config.is_retryable,
+            entity_scoped=TABLE_PLACEHOLDER in config.path,
+            query_params=config.query_params,
+        )
 
 
 @dataclass(frozen=True)
@@ -131,24 +146,14 @@ class Router:
 
     def _validate(self) -> None:
         """
-        Cross-check every configured operation against its code-side spec.
+        Validate every enabled operation builds a spec (shape is known).
         """
         for name, config in self.profile.operations.items():
-            spec: Optional[OperationSpec] = OPERATIONS.get(name)
-            if spec is None:
-                raise ProfileError(
-                    f"operations.{name} is not a known operation. Known operations: "
-                    f"{sorted(OPERATIONS)}. A genuinely new endpoint shape needs a "
-                    "subclass in this package, not just a profile entry.",
-                    invalid_key=f"operations.{name}")
             if not config.enabled:
                 continue
-            if spec.entity_scoped and TABLE_PLACEHOLDER not in config.path:
-                raise ProfileError(
-                    f"operations.{name}.path must contain '{TABLE_PLACEHOLDER}' because "
-                    f"'{name}' is entity-scoped; otherwise every entity would resolve to "
-                    "the same endpoint.",
-                    invalid_key=f"operations.{name}.path")
+            # Building the spec resolves the shape; an unknown shape raises here at
+            # startup rather than mid-request.
+            OperationSpec.from_config(name, config)
 
         if self.profile.gate.auto_approve_fields:
             # An auto-approve field that no entity can write is a silent misconfiguration.
@@ -171,16 +176,11 @@ class Router:
         :raises PolicyDenied: if the entity does not permit this operation.
         :raises ProfileError: if the operation or entity is unknown or disabled.
         """
-        spec: Optional[OperationSpec] = OPERATIONS.get(operation)
-        if spec is None:
-            raise ProfileError(
-                f"Unknown operation '{operation}'. Known operations: {sorted(OPERATIONS)}.",
-                invalid_key="operation")
-
         operation_config: OperationConfig = self.profile.operation(operation)
         entity_config: EntityConfig = self.profile.entity(entity)
+        spec: OperationSpec = OperationSpec.from_config(operation, operation_config)
 
-        if spec.shape is Shape.BODY and operation != "create" and not entity_config.write_fields:
+        if spec.shape is Shape.BODY and not entity_config.write_fields:
             raise PolicyDenied(
                 f"Entity '{entity}' is read-only in this deployment.",
                 entity=entity, operation=operation)
@@ -189,8 +189,8 @@ class Router:
         if spec.entity_scoped:
             path = path.replace(TABLE_PLACEHOLDER, entity_config.table)
         # An operation may live on a different host or API version than the rest of
-        # the gateway — the field-proven create endpoint does. The override is
-        # per-operation configuration, never an assumption.
+        # the gateway; the optional per-operation override expresses that. Never
+        # assumed — it applies only when a profile sets it.
         base: str = operation_config.base_url or self.profile.base_url
         url: str = f"{base}/{path.lstrip('/')}"
 

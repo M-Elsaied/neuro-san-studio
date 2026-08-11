@@ -50,9 +50,14 @@ def sample_document() -> Dict[str, Any]:
             "client_secret_env": "SN_TEST_CLIENT_SECRET",
         },
         "operations": {
-            "read": {"method": "GET", "path": "/read/{table}"},
-            "update": {"method": "PUT", "path": "/update/{table}"},
-            "create": {"method": "POST", "path": "/create/{table}", "enabled": False},
+            # A full-featured sample gateway: the read op supports the whole param
+            # set, so server-side narrowing/paging tests exercise that path.
+            "read": {"method": "GET", "path": "/read/{table}", "shape": "query",
+                     "query_params": ["display", "query", "fields", "limit", "offset",
+                                      "exclude_reference_link"]},
+            "update": {"method": "PUT", "path": "/update/{table}", "shape": "body"},
+            "create": {"method": "POST", "path": "/create/{table}", "shape": "body",
+                       "enabled": False},
         },
         "entities": {
             "request": {
@@ -138,6 +143,10 @@ class FakeGateway(HttpTransport):
         #: Seconds to block inside the (threaded) call, for loop-liveness testing.
         self.delay_seconds: float = 0.0
         self.fail_with: Optional[Exception] = None
+        #: Query-param names this fake refuses. Any present param outside this
+        #: allow-list makes the call 500 — reproducing a real gateway that accepts
+        #: only a small parameter set. Empty tuple = accept anything.
+        self.allowed_params: Optional[Tuple[str, ...]] = None
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def request(self, method: str, url: str, headers: Mapping[str, str],
@@ -149,6 +158,12 @@ class FakeGateway(HttpTransport):
             time.sleep(self.delay_seconds)
         if self.fail_with is not None:
             raise self.fail_with
+        if self.allowed_params is not None and params:
+            unexpected = sorted(set(params) - set(self.allowed_params))
+            if unexpected:
+                return RawResponse(status=500,
+                                   text=f"rejected params: {unexpected}",
+                                   json_body=None, headers={})
         if self.queued_statuses:
             status: int = self.queued_statuses.pop(0)
             if status >= 400:

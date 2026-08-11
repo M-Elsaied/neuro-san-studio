@@ -1,11 +1,15 @@
 {
   "_comment": [
-    "Deployment profile TEMPLATE. Placeholders only — never commit a filled-in copy.",
+    "Deployment profile TEMPLATE. Placeholders only - never commit a filled-in copy.",
     "Mount the real file from a ConfigMap and point SN_PROFILE_FILE at it, or override",
     "individual keys with SN_PROFILE__<path>__<key> environment variables.",
     "Secrets are NOT stored here: this file names the environment variables that hold",
     "them, so the ConfigMap stays free of secret material and the Secret stays the",
-    "only place values live."
+    "only place values live.",
+    "",
+    "SHAPES ARE CODE, DESTINATIONS ARE DATA: an endpoint is defined entirely here.",
+    "To add one of a known shape (query/body), add an 'operations' entry; to add a",
+    "table, add an 'entities' entry. See the package README 'Onboard your endpoints'."
   ],
 
   "base_url": "REPLACE_WITH_GATEWAY_BASE_URL",
@@ -13,58 +17,59 @@
   "auth": {
     "_comment": [
       "style: 'standard' is RFC 6749 client-credentials with Basic built from id and",
-      "secret. 'preencoded' is the variant flow: an opaque pre-encoded Basic",
-      "credential, with id and secret also repeated in the body. One live token call",
-      "decides which a given gateway wants; the answer is this value, not a code change."
+      "secret. 'preencoded' is the variant flow. One live token call decides which a",
+      "gateway wants; the answer is this value, not a code change.",
+      "extra_headers: some gateways require a header on every business call (e.g. a",
+      "key id). Give it as a literal, or 'env:VAR_NAME' to resolve from the",
+      "environment. Nothing gateway-specific is named in the package itself."
     ],
     "style": "standard",
     "token_url": "REPLACE_WITH_TOKEN_ENDPOINT_URL",
-
     "client_id_env": "SN_CLIENT_ID",
     "client_secret_env": "SN_CLIENT_SECRET",
     "preencoded_credential_env": "SN_GW_CREDENTIAL",
-
     "secret_body_key": "client_secret",
     "send_id_in_body": false,
     "percent_encode_credentials": true,
     "scope": null,
-
-    "_extra_headers_comment": [
-      "Some gateways require an extra per-call header. Give it here as a literal, or",
-      "as 'env:VAR_NAME' to resolve from the environment. Nothing gateway-specific is",
-      "named in the package itself."
-    ],
     "extra_headers": {}
   },
 
   "operations": {
     "_comment": [
-      "Where each logical operation goes in THIS deployment. '{table}' is substituted",
-      "from the entity map. '{record}' is optional: include it when the gateway",
-      "addresses the record in the path, omit it when the identifier belongs in the",
-      "body. The package assumes neither.",
-      "Method is configured, not assumed — update verbs differ between gateways."
+      "Each operation declares HOW it is called. Fields:",
+      "  method       GET | PUT | POST | ...",
+      "  path         '/<namespace>/{table}'  ({table} substituted from the entity;",
+      "               add {record} to address the record in the path; a fixed path",
+      "               with no {table} is allowed for endpoints that do not target a",
+      "               table).",
+      "  shape        'query' (params on a GET) or 'body' (JSON on a write).",
+      "  query_params (query shape) the EXACT logical params to send. Keep it to what",
+      "               the endpoint accepts - some gateways error on extra params.",
+      "               Known: display, query, fields, limit, offset,",
+      "               exclude_reference_link. When 'fields' is omitted the field",
+      "               allow-list is still enforced on the response.",
+      "  gated        default: false for GET, true otherwise. Writes go through the",
+      "               human approval gate.",
+      "  base_url     optional per-operation override (different host/API version).",
+      "  enabled      set false to keep an operation defined but unroutable."
     ],
     "read": {
       "method": "GET",
-      "path": "/REPLACE_WITH_READ_PATH/{table}",
-      "enabled": true
+      "path": "/REPLACE_WITH_READ_NAMESPACE/{table}",
+      "shape": "query",
+      "query_params": ["display", "query"]
     },
     "update": {
       "method": "REPLACE_WITH_UPDATE_METHOD",
-      "path": "/REPLACE_WITH_UPDATE_PATH/{table}",
-      "enabled": true
+      "path": "/REPLACE_WITH_UPDATE_NAMESPACE/{table}",
+      "shape": "body"
     },
     "create": {
-      "_comment": [
-        "Disabled until a create endpoint is confirmed in writing.",
-        "base_url (optional, any operation): overrides the profile-level base for",
-        "THIS operation only. Needed when one operation lives on a different host",
-        "or API version than the rest of the gateway - the only field-proven",
-        "create endpoint does exactly that. Omit it when the shared base applies."
-      ],
+      "_comment": "Disabled by default; enable once its endpoint is confirmed.",
       "method": "POST",
-      "path": "/REPLACE_WITH_CREATE_PATH/{table}",
+      "path": "/REPLACE_WITH_CREATE_NAMESPACE",
+      "shape": "body",
       "base_url": "REPLACE_OR_REMOVE_IF_SAME_HOST",
       "enabled": false
     }
@@ -73,11 +78,14 @@
   "entities": {
     "_comment": [
       "Logical name -> real table, plus deny-by-default field allow-lists.",
-      "A field absent from read_fields is never requested; a field absent from",
-      "write_fields can never be written, whatever the model asks for.",
-      "Leave write_fields empty to make an entity strictly read-only."
+      "A field absent from read_fields is never returned; a field absent from",
+      "write_fields can never be written. Empty write_fields = read-only entity.",
+      "display_field: the field a person refers to a record by (e.g. a number, or a",
+      "name for CMDB-style tables). coded_fields: {field: {code: label}} so answers",
+      "show real labels, not raw codes. Add one entity per table you are permitted",
+      "to touch."
     ],
-    "request": {
+    "REPLACE_WITH_LOGICAL_NAME": {
       "table": "REPLACE_WITH_TABLE_NAME",
       "identifier_field": "sys_id",
       "display_field": "number",
@@ -85,24 +93,10 @@
         "sys_id",
         "number",
         "short_description",
-        "state",
-        "priority",
-        "assigned_to",
-        "opened_at",
-        "sys_updated_on"
+        "state"
       ],
       "write_fields": [
         "work_notes"
-      ],
-
-      "_coded_fields_comment": [
-        "Field -> {stored code: human label}, for fields that store codes.",
-        "Used in BOTH directions: codes become labels on read, labels become codes",
-        "on write. Declare these. A code handed to a language model without its",
-        "meaning does not get reported as a code - it gets a meaning invented for it,",
-        "and inconsistently: the same code was rendered 'New' on one run and 'Open'",
-        "on the next. An undeclared code is tagged '<unmapped code N>' rather than",
-        "passed through bare, so the model repeats it instead of explaining it."
       ],
       "coded_fields": {
         "state": {
@@ -138,12 +132,9 @@
   "gate": {
     "_comment": [
       "keys_env names an environment variable holding a comma-separated ordered list",
-      "of HMAC signing keys. The first signs; all of them verify, which makes rotation",
-      "zero-downtime. Sourcing from the secret manager is required: generating a key",
-      "per process appears to work on one replica and silently fails as soon as a",
-      "change is proposed on one pod and committed on another.",
-      "auto_approve_fields is empty by default. Nothing bypasses the gate unless a",
-      "deployment deliberately opts a low-risk journal field in."
+      "of HMAC signing keys. The first signs, all verify (zero-downtime rotation).",
+      "Sourcing from the secret manager is required. auto_approve_fields is empty by",
+      "default: nothing bypasses the gate unless a deployment opts a low-risk field in."
     ],
     "keys_env": "SN_GATE_KEYS",
     "ttl_seconds": 300,
@@ -151,7 +142,7 @@
   },
 
   "correlation_field": null,
-  "_correlation_field_comment": "Optional field on the record where this package stamps the correlation id, so the agent-side trail joins to the system-of-record side. Leave null if no such field exists.",
+  "_correlation_field_comment": "Optional field on the record where this package stamps the correlation id, joining the agent-side trail to the record. Leave null if no such field exists.",
 
   "verify_tls": true
 }

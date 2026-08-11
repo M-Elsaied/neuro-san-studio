@@ -37,6 +37,7 @@ class ServiceNowQueryRecords(ServiceNowTool):
         :return: Records plus explicit paging information.
         """
         names: Mapping[str, str] = route.params
+        wanted = route.spec.query_params            # the params THIS operation sends
         fields: List[str] = self.readable_fields(route.entity, args.get("fields"))
         size: int = self.page_size(route, args.get("limit"))
         try:
@@ -44,28 +45,50 @@ class ServiceNowQueryRecords(ServiceNowTool):
         except (TypeError, ValueError):
             offset = 0
 
-        params: Dict[str, Any] = {
-            names["display"]: "true",
-            names["exclude_reference_link"]: "true",
-            names["fields"]: ",".join(fields),
+        # Build the query from only the params this operation declares it supports.
+        # A gateway that accepts a limited set errors on anything beyond it, so the
+        # profile — not the code — decides what is sent.
+        server_limits: bool = "limit" in wanted
+        params: Dict[str, Any] = {}
+        if "display" in wanted:
+            params[names["display"]] = "true"
+        if "query" in wanted and args.get("query"):
+            params[names["query"]] = self.normalize_query(args["query"])
+        if "fields" in wanted:
+            params[names["fields"]] = ",".join(fields)
+        if "exclude_reference_link" in wanted:
+            params[names["exclude_reference_link"]] = "true"
+        if server_limits:
             # One more than asked for, so "is there another page" is answered by the
             # gateway rather than guessed from a full page.
-            names["limit"]: size + 1,
-            names["offset"]: offset,
-        }
-        if args.get("query"):
-            params[names["query"]] = self.normalize_query(args["query"])
+            params[names["limit"]] = size + 1
+            if "offset" in wanted:
+                params[names["offset"]] = offset
 
         result: GatewayResult = await self.gateway(profile).call(
             route, args, context, params=params)
 
         records: List[Dict[str, Any]] = self.records_from(result.body)
-        has_more: bool = len(records) > size
-        records = records[:size]
+
+        # Pagination is only meaningful when the gateway honoured a server-side
+        # limit. Otherwise report the full result set with no "next page".
+        if server_limits:
+            has_more: bool = len(records) > size
+            records = records[:size]
+        else:
+            has_more = False
 
         # Remember identifiers before translating anything, so writes can resolve
         # their target from the private channel instead of trusting the model.
         self.remember_records(route.entity_name, route.entity, records, sly_data)
+
+        # Enforce the readable allow-list. When the gateway takes sysparm_fields the
+        # server already narrowed; when it does not, narrow here so the same
+        # deny-by-default guarantee holds either way.
+        if "fields" not in wanted:
+            allowed = set(fields)
+            records = [{k: v for k, v in record.items() if k in allowed}
+                       for record in records]
 
         # Translate coded values into labels. A code that arrives without its
         # meaning is a code a language model will invent a meaning for.

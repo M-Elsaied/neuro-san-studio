@@ -181,4 +181,4 @@ class TestF3ContractsAreWrittenDown(TestCase):
         example: str = (REPO_ROOT / "coded_tools" / "tools" / "servicenow"
                         / "profile.example.json").read_text(
             encoding="utf-8")
-        self.assertIn("base_url (optional, any operation)", example)
+        self.assertIn("per-operation override", example)

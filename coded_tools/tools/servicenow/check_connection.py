@@ -196,17 +196,25 @@ async def check_read(profile: Profile, entity: str, record: Optional[str]) -> bo
     except ServiceNowError as error:
         say(FAIL, "route", error.message)
         return False
-    say(PASS, "route", f"read:{entity} -> {route.method} (URL from profile)")
+    # Print the fully resolved target so the operator sees exactly what is pinged.
+    say(PASS, "route", f"read:{entity} -> {route.method} {route.url}")
 
     names = route.params
-    params: Dict[str, Any] = {
-        names["display"]: "true",
-        names["exclude_reference_link"]: "true",
-        names["fields"]: ",".join(route.entity.read_fields),
-        names["limit"]: 1,
-    }
-    if record:
+    wanted = route.spec.query_params
+    # Send only the params this operation declares — mirroring the read tool, so the
+    # check exercises the same request the tool would make (not a different one).
+    params: Dict[str, Any] = {}
+    if "display" in wanted:
+        params[names["display"]] = "true"
+    if "fields" in wanted:
+        params[names["fields"]] = ",".join(route.entity.read_fields)
+    if "exclude_reference_link" in wanted:
+        params[names["exclude_reference_link"]] = "true"
+    if "limit" in wanted:
+        params[names["limit"]] = 1
+    if "query" in wanted and record:
         params[names["query"]] = f"{route.entity.display_field}={record}"
+    print(f"         params: {params}")
 
     context = ToolContext.build({"origin_str": "connection-check"}, {}, "ConnectionCheck",
                                 "read", entity)
@@ -215,11 +223,22 @@ async def check_read(profile: Profile, entity: str, record: Optional[str]) -> bo
                                              context, params=params)
     except ServiceNowError as error:
         say(FAIL, "read", error.message)
-        if error.reason == "downstream_failed":
-            print("         The gateway answered with an error for this path. A 404 "
-                  "here usually means the operation path or table in the profile "
-                  "does not match the gateway — an inventory problem, not a code "
-                  "problem. Report it against the endpoint contract.")
+        status = error.details.get("status_code")
+        if status == 403:
+            print("         403 is an authorization/policy rejection. The token is "
+                  "valid (it was obtained above), so this is usually a required "
+                  "business-call header or an unsubscribed path/product at the "
+                  "gateway. Confirm the read call's required headers with the "
+                  "endpoint owner.")
+        elif status == 404:
+            print("         404 usually means the operation path or table in the "
+                  "profile does not match the gateway. Compare the URL above with "
+                  "the endpoint contract.")
+        elif status == 500 or status is None:
+            print("         500 often means the request carried a parameter this "
+                  "endpoint does not accept. Compare the params above with the "
+                  "endpoint contract, and trim query_params for this operation to "
+                  "only what it supports.")
         return False
 
     body = result.body if isinstance(result.body, dict) else {}

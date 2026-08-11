@@ -126,7 +126,9 @@ what it says and touch nothing else.
 | **Prove the connection works** | §2 above — `check_connection.py` | no |
 | Run the tests | `pytest -o addopts= tests/coded_tools/tools/servicenow -q` | no |
 | **Point at a real gateway** | Copy `profile.example.json`, fill it, set `SN_PROFILE_FILE` | **no** |
+| **Add a new endpoint** (of a known shape) | Add an `operations.<name>` entry — see §3a worksheet | no |
 | Change an endpoint path / HTTP method | `operations.<name>.path` / `.method` in the profile | no |
+| Change which query params an endpoint sends | `operations.<name>.query_params` — send only what the gateway accepts | no |
 | Put one operation on a different host or API version | `operations.<name>.base_url` in the profile | no |
 | Add a table the agents may touch | Add an `entities.<name>` block in the profile **+** one agent block in `registries/tools/servicenow.hocon` (copy `RequestReader`, change `name` and `entity`) | no |
 | Change which fields are readable / writable | `entities.<name>.read_fields` / `.write_fields` | no |
@@ -144,6 +146,60 @@ what it says and touch nothing else.
 
 After any profile change: **restart the process.** The profile is cached at
 first use; a broken profile then refuses to start and names the offending key.
+
+---
+
+## 3a. Onboard your endpoints (worksheet)
+
+Endpoints are defined **entirely in the profile** — the code supplies the *shapes*,
+the profile supplies the *destinations*. Adding one never edits Python. Work through
+your endpoint inventory row by row:
+
+**Step 1 — pick the shape** for each endpoint from its URL/method:
+
+| The endpoint looks like… | shape | Goes in |
+|---|---|---|
+| `GET …/<namespace>/<table>?<params>` | `query` | `operations.<name>` + one `entities.<name>` per table |
+| `PUT`/`POST …/<namespace>/<table>` with a JSON body | `body` | `operations.<name>` (writes are gated) |
+| attachment download (binary) / upload (multipart) / a publish action | *not built yet* | needs code — out of scope for now |
+
+**Step 2 — add the operation** (once per namespace/method):
+
+```json
+"operations": {
+  "read":   { "method":"GET",  "path":"/<read-namespace>/{table}",  "shape":"query",
+              "query_params":["display","query"] },
+  "update": { "method":"<verb>", "path":"/<update-namespace>/{table}", "shape":"body" }
+}
+```
+
+- `{table}` is filled from the entity. Use `{record}` too if the identifier goes in
+  the path. A fixed path with no `{table}` is fine for endpoints that don't target a
+  table.
+- **`query_params` is the fix for picky gateways** — list only the params the endpoint
+  accepts. Sending more can make a gateway error. Field allow-listing still holds even
+  when `fields` isn't sent (it's applied to the response).
+
+**Step 3 — add one entity per table** you're permitted to touch:
+
+```json
+"entities": {
+  "<logical-name>": {
+    "table": "<real-table>",
+    "display_field": "number",        // the value users refer to a record by ("name" for CMDB-style)
+    "read_fields":  ["sys_id","number","..."],
+    "write_fields": ["work_notes"],   // empty = read-only
+    "coded_fields": { "state": { "1":"<label>", "2":"<label>" } }
+  }
+}
+```
+
+**Step 4 — add an agent** in `registries/tools/servicenow.hocon` only for entities a
+user should be able to invoke (copy `RequestReader`, change `name` + `entity`).
+
+**Rule of thumb:** new table → entity entry; new endpoint of a known shape → operation
+entry (+ agent if user-facing); new *shape* → code. The real host, paths and tables go
+only in your gitignored `sn_profile.json`, never in the repo.
 
 ---
 
