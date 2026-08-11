@@ -21,6 +21,7 @@ Non-negotiables enforced in this module:
 """
 
 import asyncio
+import logging
 import random
 import threading
 import time
@@ -47,6 +48,8 @@ from coded_tools.tools.servicenow.reporting import MARKER_DOWNSTREAM_CALL
 from coded_tools.tools.servicenow.reporting import report
 from coded_tools.tools.servicenow.router import BoundRoute
 from coded_tools.tools.servicenow.scrub import scrub_text
+
+log = logging.getLogger(__name__)
 
 RETRYABLE_STATUSES: frozenset = frozenset({429, 500, 502, 503, 504})
 MAX_BACKOFF_SECONDS: float = 8.0
@@ -89,12 +92,18 @@ class RequestsTransport(HttpTransport):
     def request(self, method: str, url: str, headers: Mapping[str, str],
                 params: Optional[Mapping[str, Any]], json_body: Optional[Mapping[str, Any]],
                 timeout: Tuple[float, float], verify: bool) -> RawResponse:
+        # Header NAMES only (never values — an Authorization value is a credential).
+        log.debug("PING %s %s params=%s headers=%s", method, url,
+                  dict(params or {}), sorted(headers))
         try:
             response = requests.request(method, url, headers=dict(headers), params=params,
                                         json=json_body, timeout=timeout, verify=verify)
         except requests.RequestException as exception:
+            log.debug("PING failed %s %s: %s", method, url, type(exception).__name__)
             raise TransportError(f"Downstream unreachable: {type(exception).__name__}",
                                  reason="downstream_unreachable") from exception
+        # The fully stitched URL, query string and all — the exact wire target.
+        log.debug("PONG HTTP %s <- %s", response.status_code, response.request.url)
         parsed: Any = None
         if response.content:
             try:

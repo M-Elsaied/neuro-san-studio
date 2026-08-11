@@ -30,12 +30,16 @@ from typing import Mapping
 from typing import Optional
 from typing import Tuple
 
+import logging
+
 import requests
 
 from coded_tools.tools.servicenow.errors import AuthError
 from coded_tools.tools.servicenow.profile import AuthConfig
 from coded_tools.tools.servicenow.profile import Profile
 from coded_tools.tools.servicenow.scrub import scrub_text
+
+log = logging.getLogger(__name__)
 
 # Refresh this far ahead of stated expiry so a slow call cannot race the boundary.
 REFRESH_SKEW_SECONDS: float = 60.0
@@ -145,7 +149,11 @@ class TokenProvider:
             request_headers["Accept"] = "application/json"
             payload: Dict[str, Any] = ({"json": body} if content_type == "application/json"
                                        else {"data": body})
+            # Endpoint + style + content-type only — never the credential or token.
+            log.debug("token exchange: POST %s style=%s content_type=%s",
+                      self.auth.token_url, self.auth.style, content_type)
             response = self._post_with_retry(request_headers, payload)
+            log.debug("token exchange: HTTP %s", response.status_code)
 
             if response.status_code == 200:
                 return self._parse_token(response)

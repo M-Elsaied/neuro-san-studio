@@ -29,6 +29,7 @@ from typing import Tuple
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
+from coded_tools.tools.servicenow import debuglog
 from coded_tools.tools.servicenow import labels
 from coded_tools.tools.servicenow.context import SLY_PROPOSAL_KEY
 from coded_tools.tools.servicenow.context import SLY_RECORD_MAP
@@ -47,6 +48,11 @@ from coded_tools.tools.servicenow.transport import Gateway
 #: The shapes a legitimate record number or identifier can take. Anything else is
 #: refused before it can be embedded in a lookup query.
 _SAFE_REFERENCE: re.Pattern = re.compile(r"[A-Za-z0-9@][A-Za-z0-9@._\- ]{0,63}")
+
+# Honour SN_DEBUG once at import so URL tracing can be turned on in a running
+# server (or the pod) purely by setting the env var — no code edit, which is how
+# this had to be debugged by hand before.
+debuglog.enable_debug_if_requested()
 
 
 class ServiceNowTool(CodedTool):

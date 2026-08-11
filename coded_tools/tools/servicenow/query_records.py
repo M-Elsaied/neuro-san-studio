@@ -6,6 +6,7 @@ agent* to call, never *which table* to reach. That is what makes the allow-list 
 control rather than a suggestion.
 """
 
+import logging
 from typing import Any
 from typing import Dict
 from typing import List
@@ -17,6 +18,8 @@ from coded_tools.tools.servicenow.context import ToolContext
 from coded_tools.tools.servicenow.profile import Profile
 from coded_tools.tools.servicenow.router import BoundRoute
 from coded_tools.tools.servicenow.transport import GatewayResult
+
+log = logging.getLogger(__name__)
 
 
 class ServiceNowQueryRecords(ServiceNowTool):
@@ -64,6 +67,10 @@ class ServiceNowQueryRecords(ServiceNowTool):
             params[names["limit"]] = size + 1
             if "offset" in wanted:
                 params[names["offset"]] = offset
+
+        log.debug("read %s: declared query_params=%s -> sending=%s (fields narrowed %s)",
+                  route.entity_name, list(wanted), sorted(params),
+                  "server-side" if "fields" in wanted else "on the response")
 
         result: GatewayResult = await self.gateway(profile).call(
             route, args, context, params=params)

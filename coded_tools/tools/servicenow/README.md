@@ -270,6 +270,34 @@ Each line also carries the framework's own `request_id` (joins to its journal)
 and `user_id`. Field names are always logged; values only if allow-listed;
 never a token or credential.
 
+### Debugging URL stitching — `SN_DEBUG=1`
+
+The audit lines above deliberately omit the host and full URL (a hostname is a
+deployment identifier). That is what makes "which URL did it actually hit?" hard to
+see. For that, turn on the **opt-in debug channel**:
+
+```bash
+SN_DEBUG=1 python coded_tools/tools/servicenow/check_connection.py --entity <name> --record <ref>
+# or, in the running server / pod: set SN_DEBUG=1 in the environment
+```
+
+It emits, to stderr, the full picture at each composition point — no code edit,
+no hand-added prints:
+
+```
+[sn-debug] …auth:      token exchange: POST <token_url> style=standard content_type=…  -> HTTP 200
+[sn-debug] …router:    stitch read/incident: base=<base> + path='/…/{table}' (table=incident) -> <full url> | shape=query gated=False query_params=['display','query']
+[sn-debug] …transport: PING GET <url> params={…} headers=['Accept','Authorization']
+[sn-debug] …transport: PONG HTTP 200 <- <FULLY STITCHED URL incl. ?sysparm_…>
+```
+
+The `PONG` line is the exact wire URL, query string and all — the thing you had to
+hand-print before. It shows header **names** only, never a token or credential.
+
+**Caveat, deliberately stated:** these lines contain real hostnames and URLs. Turn
+`SN_DEBUG` on only while troubleshooting, and don't point DEBUG at a log sink that
+leaves the host. Default (off) keeps the shipped audit stream host-free.
+
 ---
 
 ## 6. Rules that must not be broken

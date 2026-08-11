@@ -278,6 +278,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("ServiceNow connection check")
     print("---------------------------")
 
+    # SN_DEBUG=1 adds full-URL / param tracing on stderr for this run.
+    from coded_tools.tools.servicenow import debuglog  # pylint: disable=import-outside-toplevel
+    if debuglog.enable_debug_if_requested():
+        print("  (SN_DEBUG on: full URL + param tracing to stderr)")
+
     loaded = load_dotenv_if_present()
     if loaded:
         print(f"  (.env loaded from {loaded}; values already in the shell win)")

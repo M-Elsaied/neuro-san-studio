@@ -15,6 +15,7 @@ So adding an endpoint is a profile edit. Only a genuinely new *shape* requires
 Python, and then it is one subclass.
 """
 
+import logging
 import threading
 from dataclasses import dataclass
 from dataclasses import replace
@@ -33,6 +34,8 @@ from coded_tools.tools.servicenow.profile import Profile
 from coded_tools.tools.servicenow.profile import TABLE_PLACEHOLDER
 from coded_tools.tools.servicenow.profile import get_profile
 
+
+log = logging.getLogger(__name__)
 
 #: Optional placeholder in a path template. When present, the record identifier is
 #: addressed in the URL; when absent, it travels in the request body.
@@ -114,8 +117,10 @@ class BoundRoute:
         """
         if not self.record_in_path:
             return self
-        return replace(self, url=self.url.replace(RECORD_PLACEHOLDER,
-                                                  quote(str(record_id), safe="")))
+        bound = replace(self, url=self.url.replace(RECORD_PLACEHOLDER,
+                                                   quote(str(record_id), safe="")))
+        log.debug("bind record %s into path -> %s", record_id, bound.url)
+        return bound
 
     @property
     def route_key(self) -> str:
@@ -193,6 +198,15 @@ class Router:
         # assumed — it applies only when a profile sets it.
         base: str = operation_config.base_url or self.profile.base_url
         url: str = f"{base}/{path.lstrip('/')}"
+
+        # The composition that was a nightmare to see today: every piece that went
+        # into the URL, on one line. Off unless SN_DEBUG / DEBUG is enabled.
+        log.debug(
+            "stitch %s/%s: base=%r + path=%r  (table=%s)  ->  %s | shape=%s "
+            "gated=%s retryable=%s query_params=%s",
+            operation, entity, base, operation_config.path,
+            entity_config.table if spec.entity_scoped else "(fixed path, no table)",
+            url, spec.shape.value, spec.gated, spec.retryable, list(spec.query_params))
 
         return BoundRoute(
             spec=spec,
