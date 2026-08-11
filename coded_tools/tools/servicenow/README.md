@@ -94,7 +94,50 @@ All checks passed.
 ### Option B — against a real gateway
 
 1. Copy `profile.example.json`, fill in the real base URL, token URL, paths and
-   table names, and save it somewhere OUTSIDE the repo.
+   table names, and save it somewhere OUTSIDE the repo. **Every `REPLACE_…` token
+   must be replaced** — the profile is validated at load and a leftover placeholder
+   (or a missing required key) fails fast, naming the offending key.
+
+   A minimal, read-only profile looks like this once filled in (values below are
+   illustrative `example.com` stand-ins — swap in your real gateway's; keep this
+   file gitignored). Anything not shown here keeps the template's defaults:
+
+   ```json
+   {
+     "base_url": "https://gateway.example.com/api/1.0/snow",
+     "auth": {
+       "style": "standard",
+       "token_url": "https://gateway.example.com/oauth/token",
+       "client_id_env": "SN_CLIENT_ID",
+       "client_secret_env": "SN_CLIENT_SECRET"
+     },
+     "operations": {
+       "read": {
+         "method": "GET",
+         "path": "/readnamespace/{table}",
+         "shape": "query",
+         "query_params": ["display", "query"]
+       }
+     },
+     "entities": {
+       "incident": {
+         "table": "incident",
+         "identifier_field": "sys_id",
+         "display_field": "number",
+         "read_fields": ["sys_id", "number", "short_description", "state"],
+         "write_fields": [],
+         "coded_fields": { "state": { "1": "New", "2": "In Progress" } }
+       }
+     },
+     "gate": { "keys_env": "SN_GATE_KEYS" }
+   }
+   ```
+
+   The full `base_url` matters: it must include every fixed path segment the
+   gateway expects **before** the operation `path` (e.g. an API version and product
+   prefix). `base_url` + `operations.read.path` (with `{table}` substituted) is the
+   URL that gets hit — turn on `SN_DEBUG=1` (see §5) to see it stitched. Add
+   `update`/`create` operations and `write_fields` only when you're doing writes.
 2. Point the same `SN_*` variables at the real thing — in your `.env` locally,
    or as shell exports (shell wins over `.env`):
 
@@ -113,6 +156,12 @@ Reading a failure: the checker names the missing env var, the broken profile
 key, or the refused step — and a 404 on the read step means the *path or table
 in the profile doesn't match the gateway* (an endpoint-contract problem to
 report, not code to debug).
+
+**Still stuck on which URL was actually hit?** Re-run with `SN_DEBUG=1` in front
+of the command — it prints the token exchange, the stitched `base_url + path`
+breakdown, and the exact wire URL that was called (see **§5 → Debugging URL
+stitching** for the full trace and its confidentiality caveat). This is the
+fastest way to catch a `base_url` that's missing a path segment.
 
 ---
 
