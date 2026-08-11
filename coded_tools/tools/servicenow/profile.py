@@ -194,6 +194,12 @@ class Profile:
     gate: GateConfig
     correlation_field: Optional[str] = None
     verify_tls: bool = True
+    # Query-value characters to leave literal instead of percent-encoding. A
+    # standards-compliant gateway decodes %3D back to '=', but some custom query
+    # parsers do not — a ServiceNow-style ``sysparm_query`` needs a literal '='
+    # (``number=INC...``). Widen this (e.g. "=^") only if a gateway also needs
+    # operators like '^' left literal in compound queries.
+    query_safe_chars: str = "="
 
     def operation(self, name: str) -> OperationConfig:
         """
@@ -552,6 +558,7 @@ def build_profile(document: Mapping[str, Any]) -> Profile:
         gate=gate,
         correlation_field=document.get("correlation_field") or None,
         verify_tls=bool(document.get("verify_tls", True)),
+        query_safe_chars=str(document.get("query_safe_chars", "=")),
     )
 
     if not profile.verify_tls:

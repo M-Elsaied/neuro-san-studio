@@ -32,6 +32,8 @@ from typing import Dict
 from typing import Mapping
 from typing import Optional
 from typing import Tuple
+from urllib.parse import quote_plus
+from urllib.parse import urlencode
 
 import requests
 
@@ -71,7 +73,8 @@ class HttpTransport:
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def request(self, method: str, url: str, headers: Mapping[str, str],
                 params: Optional[Mapping[str, Any]], json_body: Optional[Mapping[str, Any]],
-                timeout: Tuple[float, float], verify: bool) -> RawResponse:
+                timeout: Tuple[float, float], verify: bool,
+                query_safe: str = "") -> RawResponse:
         """
         :param method: HTTP method.
         :param url: Absolute URL.
@@ -80,6 +83,8 @@ class HttpTransport:
         :param json_body: JSON request body, or None.
         :param timeout: (connect, read) timeout pair.
         :param verify: TLS verification flag; always True here.
+        :param query_safe: Characters to leave literal in query values instead of
+            percent-encoding (e.g. "=" for a ServiceNow-style sysparm_query).
         :return: The raw response.
         """
         raise NotImplementedError
@@ -91,15 +96,28 @@ class RequestsTransport(HttpTransport):
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def request(self, method: str, url: str, headers: Mapping[str, str],
                 params: Optional[Mapping[str, Any]], json_body: Optional[Mapping[str, Any]],
-                timeout: Tuple[float, float], verify: bool) -> RawResponse:
+                timeout: Tuple[float, float], verify: bool,
+                query_safe: str = "") -> RawResponse:
+        # requests percent-encodes every query value, turning a sysparm_query's
+        # '=' into %3D. A standards-compliant gateway decodes it back, but a custom
+        # query parser can reject it (observed: HTTP 500 on %3D, 200 on a literal
+        # '='). So when query_safe names characters to preserve, build the query
+        # string here — keeping those literal — and hand requests a formed URL.
+        request_url: str = url
+        send_params: Optional[Mapping[str, Any]] = params
+        if params and query_safe:
+            query: str = urlencode(dict(params), safe=query_safe, quote_via=quote_plus)
+            request_url = f"{url}{'&' if '?' in url else '?'}{query}"
+            send_params = None
         # Header NAMES only (never values — an Authorization value is a credential).
-        log.debug("PING %s %s params=%s headers=%s", method, url,
+        log.debug("PING %s %s params=%s headers=%s", method, request_url,
                   dict(params or {}), sorted(headers))
         try:
-            response = requests.request(method, url, headers=dict(headers), params=params,
-                                        json=json_body, timeout=timeout, verify=verify)
+            response = requests.request(method, request_url, headers=dict(headers),
+                                        params=send_params, json=json_body,
+                                        timeout=timeout, verify=verify)
         except requests.RequestException as exception:
-            log.debug("PING failed %s %s: %s", method, url, type(exception).__name__)
+            log.debug("PING failed %s %s: %s", method, request_url, type(exception).__name__)
             raise TransportError(f"Downstream unreachable: {type(exception).__name__}",
                                  reason="downstream_unreachable") from exception
         # The fully stitched URL, query string and all — the exact wire target.
@@ -298,7 +316,7 @@ class Gateway:
         token, action, ttl = self._token()
         response: RawResponse = self.transport.request(
             route.method, route.url, self._headers(token), params, body,
-            timeout, self.profile.verify_tls)
+            timeout, self.profile.verify_tls, query_safe=self.profile.query_safe_chars)
 
         if response.status == 401:
             # The cached token was revoked or expired early. Drop it and try once
@@ -308,7 +326,7 @@ class Gateway:
             token, action, ttl = self._token()
             response = self.transport.request(
                 route.method, route.url, self._headers(token), params, body,
-                timeout, self.profile.verify_tls)
+                timeout, self.profile.verify_tls, query_safe=self.profile.query_safe_chars)
         return response, action, ttl
 
     async def call(self, route: BoundRoute, args: Mapping[str, Any], context: ToolContext,

@@ -144,5 +144,16 @@
   "correlation_field": null,
   "_correlation_field_comment": "Optional field on the record where this package stamps the correlation id, joining the agent-side trail to the record. Leave null if no such field exists.",
 
+  "query_safe_chars": "=",
+  "_query_safe_chars_comment": [
+    "Characters left LITERAL in query-parameter values instead of being",
+    "percent-encoded. A ServiceNow-style sysparm_query is 'field=value', so '='",
+    "must survive: a standards-compliant gateway decodes %3D back to '=', but a",
+    "custom query parser can reject the escaped form (observed: HTTP 500 on %3D,",
+    "200 on a literal '='). Default '=' matches that. Widen to e.g. '=^' only if a",
+    "gateway also needs operators like '^' literal in compound queries; set '' to",
+    "let the HTTP library encode everything (strict, RFC-style)."
+  ],
+
   "verify_tls": true
 }

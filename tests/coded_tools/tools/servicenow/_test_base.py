@@ -151,9 +151,11 @@ class FakeGateway(HttpTransport):
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def request(self, method: str, url: str, headers: Mapping[str, str],
                 params: Optional[Mapping[str, Any]], json_body: Optional[Mapping[str, Any]],
-                timeout: Tuple[float, float], verify: bool) -> RawResponse:
+                timeout: Tuple[float, float], verify: bool,
+                query_safe: str = "") -> RawResponse:
         self.calls.append({"method": method, "url": url, "params": dict(params or {}),
-                           "body": dict(json_body or {}), "headers": dict(headers)})
+                           "body": dict(json_body or {}), "headers": dict(headers),
+                           "query_safe": query_safe})
         if self.delay_seconds:
             time.sleep(self.delay_seconds)
         if self.fail_with is not None:
