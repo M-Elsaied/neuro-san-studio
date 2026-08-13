@@ -20,8 +20,12 @@
       "secret. 'preencoded' is the variant flow. One live token call decides which a",
       "gateway wants; the answer is this value, not a code change.",
       "extra_headers: some gateways require a header on every business call (e.g. a",
-      "key id). Give it as a literal, or 'env:VAR_NAME' to resolve from the",
-      "environment. Nothing gateway-specific is named in the package itself."
+      "key id) in addition to the bearer token. Give the value as a literal, or as",
+      "'env:VAR_NAME' to resolve from the environment so no secret sits in this",
+      "file. Example (uncomment and rename to your gateway's header):",
+      "  \"extra_headers\": { \"keyId\": \"env:SN_KEY_ID\" }",
+      "then set SN_KEY_ID in the environment. Nothing gateway-specific is named in",
+      "the package itself. Leave {} if your gateway needs no extra header."
     ],
     "style": "standard",
     "token_url": "REPLACE_WITH_TOKEN_ENDPOINT_URL",

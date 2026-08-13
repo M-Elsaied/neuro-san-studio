@@ -163,6 +163,16 @@ breakdown, and the exact wire URL that was called (see **§5 → Debugging URL
 stitching** for the full trace and its confidentiality caveat). This is the
 fastest way to catch a `base_url` that's missing a path segment.
 
+**Token mints but the read gets a 500 / "Technical error occurred in API
+Gateway"?** The URL is reaching the gateway but the request is missing something
+it demands. The fastest way to find it: open the same call in a tool that works
+(e.g. Postman), export it as **cURL**, and diff the headers against ours (the
+`SN_DEBUG` `PING` line lists our header *names*). A gateway commonly requires an
+extra per-call header — an API **key id** — beyond the bearer token; add it with
+`auth.extra_headers` (`{ "keyId": "env:SN_KEY_ID" }`) and set `SN_KEY_ID`, no
+code change. If instead the body is an HTML challenge page, a WAF is blocking the
+client rather than the gateway rejecting the request.
+
 ---
 
 ## 3. What do you want to do?
@@ -185,6 +195,8 @@ what it says and touch nothing else.
 | Fix wrong state/priority wording in answers | `entities.<name>.coded_fields` — code→label maps from the instance's choice lists | no |
 | Serve the network | `registries/tools/manifest.hocon`: flip `"tools/servicenow.hocon"` to `true` | no |
 | Change credentials | Locally: `SN_CLIENT_ID` / `SN_CLIENT_SECRET` in `.env` (see `.env.example`). Cluster: the Secret behind the same names (+ `SN_GW_CREDENTIAL` for the variant flow) | no |
+| **Gateway needs an extra per-call header** (e.g. an API key id) | `auth.extra_headers` in the profile: `{ "keyId": "env:SN_KEY_ID" }`, and set `SN_KEY_ID` in `.env` / the Secret. `env:NAME` keeps the value out of the profile | no |
+| Send a literal `=` (or other char) in query values | `query_safe_chars` in the profile (default `"="`). Some custom parsers reject `%3D`; widen to e.g. `"=^"` for compound queries, `""` for strict encoding | no |
 | Rotate gate signing keys | `SN_GATE_KEYS` = comma-separated list; **new key first**, old keys stay until tokens expire (5 min) | no |
 | Switch token flow after `--try-both` | `auth.style`: `standard` or `preencoded` | no |
 | Hotfix one profile key without reissuing the file | Env var, e.g. `SN_PROFILE__operations__read__path=/new/{table}` | no |
