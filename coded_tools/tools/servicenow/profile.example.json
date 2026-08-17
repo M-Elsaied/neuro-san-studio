@@ -81,16 +81,23 @@
 
   "entities": {
     "_comment": [
-      "Logical name -> real table, plus deny-by-default field allow-lists.",
+      "Logical name -> real table, plus deny-by-default field allow-lists. The",
+      "logical name (the KEY) is what agents and check_connection's --entity refer",
+      "to; 'table' is the real table it maps to and is a value YOU fill in. Add one",
+      "entity per table you are permitted to touch — this is how you 'define all",
+      "your tables'. Keep real table names out of any committed copy of this file.",
       "A field absent from read_fields is never returned; a field absent from",
       "write_fields can never be written. Empty write_fields = read-only entity.",
-      "display_field: the field a person refers to a record by (e.g. a number, or a",
+      "read_fields IS your field extraction: the tool trims each returned record to",
+      "exactly these, so a huge gateway response comes back as only what you list.",
+      "display_field: the field a person refers to a record by (a number here; a",
       "name for CMDB-style tables). coded_fields: {field: {code: label}} so answers",
-      "show real labels, not raw codes. Add one entity per table you are permitted",
-      "to touch."
+      "show real labels, not raw codes — fill the codes/labels from your instance.",
+      "The two keys below match the readers in registries/tools/servicenow_tickets.hocon",
+      "('incident' and 'req_item'); rename/extend them to your own logical names."
     ],
-    "REPLACE_WITH_LOGICAL_NAME": {
-      "table": "REPLACE_WITH_TABLE_NAME",
+    "incident": {
+      "table": "REPLACE_WITH_INCIDENT_TABLE",
       "identifier_field": "sys_id",
       "display_field": "number",
       "read_fields": [
@@ -108,6 +115,19 @@
           "2": "REPLACE_WITH_LABEL_FOR_CODE_2"
         }
       }
+    },
+    "req_item": {
+      "_comment": "Second table example (read-only: write_fields is empty).",
+      "table": "REPLACE_WITH_REQ_ITEM_TABLE",
+      "identifier_field": "sys_id",
+      "display_field": "number",
+      "read_fields": [
+        "sys_id",
+        "number",
+        "short_description",
+        "state"
+      ],
+      "write_fields": []
     }
   },
 
