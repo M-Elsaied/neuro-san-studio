@@ -228,8 +228,8 @@ class StubGateway:
                 "client_secret_env": "SN_CLIENT_SECRET",
             },
             "operations": {
-                "read": {"method": "GET", "path": "/read/{table}"},
-                "update": {"method": "PUT", "path": "/update/{table}"},
+                "read": {"method": "GET", "path": "/read/{table}", "shape": "query"},
+                "update": {"method": "PUT", "path": "/update/{table}", "shape": "body"},
             },
             "entities": {
                 "request": {

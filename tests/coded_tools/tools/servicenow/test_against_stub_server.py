@@ -18,6 +18,7 @@ from unittest import IsolatedAsyncioTestCase
 
 import pytest
 
+from coded_tools.tools.servicenow import check_write as write_probe
 from coded_tools.tools.servicenow import profile as profile_module
 from coded_tools.tools.servicenow import router as router_module
 from coded_tools.tools.servicenow import transport as transport_module
@@ -176,6 +177,53 @@ class TestAgainstStubServer(IsolatedAsyncioTestCase):
         self.assertEqual(self.stub.state["records"][RECORD_ONE]["state"], "3")
         self.assertEqual(self.stub.state["writes"][0]["u_correlation"],
                          committed["correlation_id"])
+
+    @pytest.mark.asyncio
+    async def test_write_probe_dry_run_sends_nothing(self):
+        # The gate-bypass probe must default to a dry run: it builds the request but
+        # reaches no write endpoint, so it is safe to point at a real gateway.
+        profile = build_profile(self.stub.profile_document())
+        ok = await write_probe.check_write(
+            profile, "request", "update", RECORD_ONE, ["state=3"],
+            confirm=False, raw_id=True)
+        self.assertTrue(ok)
+        self.assertEqual(self.stub.state["writes"], [])
+        self.assertEqual([item for item in self.stub.state["requests"]
+                          if item["method"] == "PUT"], [])
+
+    @pytest.mark.asyncio
+    async def test_write_probe_confirm_reaches_the_write_endpoint(self):
+        # With --confirm it sends the real PUT, bypassing propose/commit entirely —
+        # the connectivity proof the probe exists for.
+        profile = build_profile(self.stub.profile_document())
+        ok = await write_probe.check_write(
+            profile, "request", "update", RECORD_ONE, ["state=3"],
+            confirm=True, raw_id=True)
+        self.assertTrue(ok)
+        self.assertEqual(len(self.stub.state["writes"]), 1)
+        self.assertEqual(self.stub.state["records"][RECORD_ONE]["state"], "3")
+
+    @pytest.mark.asyncio
+    async def test_write_probe_refuses_a_query_shape_operation(self):
+        # --operation accepts any name, but a query-shape (read) op is not a write:
+        # the probe must refuse it rather than send an empty body to a GET endpoint.
+        profile = build_profile(self.stub.profile_document())
+        ok = await write_probe.check_write(
+            profile, "request", "read", RECORD_ONE, ["state=3"],
+            confirm=True, raw_id=True)
+        self.assertFalse(ok)
+        self.assertEqual(self.stub.state["writes"], [])
+
+    @pytest.mark.asyncio
+    async def test_write_probe_refuses_a_non_writable_field(self):
+        # The write allow-list is enforced in the probe exactly as in the gated path,
+        # so a bad field fails before any request is sent.
+        profile = build_profile(self.stub.profile_document())
+        ok = await write_probe.check_write(
+            profile, "request", "update", RECORD_ONE, ["sys_id=hacked"],
+            confirm=True, raw_id=True)
+        self.assertFalse(ok)
+        self.assertEqual(self.stub.state["writes"], [])
 
     @pytest.mark.asyncio
     async def test_unapproved_commit_reaches_no_write_endpoint(self):
