@@ -37,7 +37,10 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # upstream files this branch has no authority over.
 SCANNED_DIRECTORIES: Tuple[str, ...] = ("coded_tools/tools/servicenow",
                                         "tests/coded_tools/tools/servicenow")
-SCANNED_ROOT_FILES: Tuple[str, ...] = ("registries/tools/servicenow.hocon",)
+# A GLOB, not a fixed list: every ServiceNow network registry is scanned, and a new
+# one is covered the moment it lands. A tickets registry added outside the old fixed
+# list is exactly how a real record number once slipped past this guard.
+SCANNED_ROOT_GLOBS: Tuple[str, ...] = ("registries/tools/servicenow*.hocon",)
 SCANNED_SUFFIXES: Tuple[str, ...] = (".py", ".hocon", ".json", ".md", ".ini", ".yaml", ".yml")
 
 EXCLUDED_PARTS: Tuple[str, ...] = (".venv", "__pycache__", ".git", "node_modules", ".pytest_cache")
@@ -105,10 +108,10 @@ def scanned_files() -> Iterator[Path]:
     """
     :return: Every file the guard is responsible for.
     """
-    for name in SCANNED_ROOT_FILES:
-        candidate: Path = REPO_ROOT / name
-        if candidate.is_file():
-            yield candidate
+    for pattern in SCANNED_ROOT_GLOBS:
+        for candidate in sorted(REPO_ROOT.glob(pattern)):
+            if candidate.is_file():
+                yield candidate
     for directory in SCANNED_DIRECTORIES:
         root: Path = REPO_ROOT / directory
         if not root.is_dir():
@@ -170,6 +173,16 @@ class TestNoClientIdentifiers(TestCase):
             self.assertEqual(findings, [],
                              "Reserved test namespaces must not trip the guard, or every "
                              "fixture would need an exemption.")
+
+    def test_every_servicenow_registry_is_scanned(self):
+        # Coverage lock: whatever servicenow*.hocon exists on disk must be in the
+        # scanned set, so a network added later cannot silently escape the guard.
+        scanned = {path.resolve() for path in scanned_files()}
+        registries = list((REPO_ROOT / "registries" / "tools").glob("servicenow*.hocon"))
+        self.assertTrue(registries, "expected at least one servicenow registry to exist")
+        for registry in registries:
+            self.assertIn(registry.resolve(), scanned,
+                          f"{registry.name} is not scanned by the identifier guard.")
 
     def test_ci_supplied_patterns_are_honoured(self):
         saved = os.environ.get("SCRUB_EXTRA_PATTERNS")
