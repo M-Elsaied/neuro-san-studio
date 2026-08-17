@@ -5,8 +5,15 @@ Agents **read** records in a ServiceNow-style system through an API gateway, and
 tables and credentials come from a config file at runtime — the code contains
 none, and a test fails the build if one appears.
 
-- Review registers travel as tests: `test_review_findings.py` (R1–R5), `test_fundamentals.py` (F1–F3)
-- 158 tests, ~10 s, no credentials, no network beyond loopback
+**Porting to a new environment? Jump to [§2 — Port it in six steps](#2-port-it-in-six-steps).**
+Everything deployment-specific lives in one file (`sn_profile.json`) you fill in;
+nothing in the code or the agent registries changes between clients.
+
+- Two CLI probes prove connectivity before any agent: `check_connection.py` (read),
+  `check_write.py` (write, gate-bypassed, dry-run by default)
+- Two agent networks: `servicenow.hocon` (read + gated write) and
+  `servicenow_tickets.hocon` (simple read-only ticket lookup)
+- ~190 tests, ~10 s, no credentials, no network beyond loopback
 - Requires `neuro-san>=0.6` (this repo's pin qualifies)
 
 ---
@@ -17,9 +24,10 @@ none, and a test fails the build if one appears.
 neuro-san-studio/
 │
 ├── coded_tools/tools/servicenow/          THE PACKAGE (all Python lives here)
-│   ├── check_connection.py                << START HERE - connection test
+│   ├── check_connection.py                << START HERE - READ connectivity probe
+│   ├── check_write.py                      WRITE probe (PUT/POST, gate-bypassed, dry-run)
 │   ├── README.md                          this file
-│   ├── profile.example.json               config template (placeholders only)
+│   ├── profile.example.json               config template (placeholders only) — COPY & FILL
 │   │
 │   ├── base.py                            shared pipeline every tool runs
 │   ├── query_records.py                   read tool
@@ -29,17 +37,20 @@ neuro-san-studio/
 │   ├── profile.py / router.py             config loading + endpoint routing
 │   ├── auth.py / transport.py             tokens + the only HTTP in the package
 │   ├── gate.py / labels.py / scrub.py     approval tokens, code<->label, redaction
+│   ├── debuglog.py                        opt-in SN_DEBUG URL-stitch tracing
 │   ├── context.py / reporting.py / errors.py
 │   │
 │   └── demo/                              local FAKE gateway, for trying things
 │       ├── run_stub_gateway.py            run this to get a gateway on :8099
 │       └── stub_gateway.py                (writes profile.local.json, gitignored)
 │
-├── registries/tools/servicenow.hocon      the agent network (logic only, no URLs)
-├── registries/tools/manifest.hocon        the on/off switch:
-│                                            "tools/servicenow.hocon": false
+├── registries/tools/servicenow.hocon          agent network: read + gated write
+├── registries/tools/servicenow_tickets.hocon  agent network: simple read-only lookup
+├── registries/tools/manifest.hocon            the on/off switch (per network):
+│                                                "tools/servicenow.hocon": true
+│                                                "tools/servicenow_tickets.hocon": true
 │
-└── tests/coded_tools/tools/servicenow/    the full test suite (158 tests)
+└── tests/coded_tools/tools/servicenow/    the full test suite (~190 tests)
 ```
 
 One rule explains the layout: **shapes are code, destinations are data.** Python
@@ -48,7 +59,27 @@ profile file carries everything environment-specific.
 
 ---
 
-## 2. First run — prove the connection (2 minutes)
+## 2. Port it in six steps
+
+Only two things ever change per environment: your **`.env`** (secrets) and your
+**`sn_profile.json`** (endpoints/tables). The code and the agent registries are
+identical everywhere. Do these in order — each step is proven before the next:
+
+| # | Step | How |
+|---|---|---|
+| 1 | **Copy the package** | `coded_tools/tools/servicenow/`, both `registries/tools/servicenow*.hocon`, and `tests/coded_tools/tools/servicenow/` into the target repo |
+| 2 | **Set secrets** | Copy the ServiceNow block from `.env.example` into `.env` (or the cluster Secret): `SN_CLIENT_ID`, `SN_CLIENT_SECRET`, `SN_GATE_KEYS`, and any header secret like `SN_KEY_ID`. Point `SN_PROFILE_FILE` at your profile |
+| 3 | **Fill the profile** | `cp profile.example.json <outside-repo>/sn_profile.json`, replace every `REPLACE_…`: `base_url` (incl. all fixed path segments), `auth.token_url`, one `operations` entry per URL shape, one `entities` entry per table. See [§3a worksheet](#3a-onboard-your-endpoints-worksheet) |
+| 4 | **Prove READS** | `check_connection.py` → HTTP 200 (§2 Option A/B below). Fix the profile until green |
+| 5 | **Prove WRITES** | `check_write.py` (dry-run, then `--confirm`) → HTTP 2xx ([§2c](#2c-prove-a-write-check_writepy)). Bypasses the approval gate so you test transport in isolation |
+| 6 | **Enable an agent network** | Flip `tools/servicenow.hocon` (or `…_tickets.hocon`) to `true` in `registries/tools/manifest.hocon`, restart the server, and drive it from the UI ([§2d](#2d-run-it-from-neuro-san)) |
+
+Run `pytest -o addopts= tests/coded_tools/tools/servicenow -q` after copying — a
+green suite means the port itself is sound before you touch any real endpoint.
+
+---
+
+## 2b. Prove the connection — reads (2 minutes)
 
 Before any agent, server or LLM key: run the connection check. It proves
 **profile → credentials → token → one read**, stopping at the first failure with
@@ -175,6 +206,85 @@ client rather than the gateway rejecting the request.
 
 ---
 
+## 2c. Prove a write (check_write.py)
+
+The write probe debugs a **PUT (update)** or **POST (create)** from the CLI, the
+same way `check_connection.py` debugs a GET. It **bypasses the approval gate** so
+you can prove transport in isolation — this is a debug tool, not the production
+path (agents always go propose → approve → commit).
+
+It is a **dry run by default**: it grounds the record, builds the exact request,
+prints it, and sends **nothing** until you add `--confirm`.
+
+```bash
+# 1) Dry run — see the exact PUT, send nothing:
+SN_DEBUG=1 python coded_tools/tools/servicenow/check_write.py \
+    --entity incident --record REQ0001 --set work_notes="probe"
+
+# 2) Same command + --confirm actually sends it (MUTATES a real record):
+SN_DEBUG=1 python coded_tools/tools/servicenow/check_write.py \
+    --entity incident --record REQ0001 --set work_notes="probe" --confirm
+```
+
+Profile prerequisite: an `operations.update` (or `create`) with `"shape":"body"`,
+and `write_fields` on the entity. Key flags:
+
+- `--operation <name>` — any **body-shape** operation in your profile (`update`,
+  `create`, or a second write namespace); a read (`query`-shape) op is refused.
+- `--entity <name>` — the table to hit, exactly like the read probe (varies
+  `{table}`). Different URL shape → a different `--operation`.
+- `--record <ref>` — target for an update; grounded to its identifier via a read.
+  Omit for create. `--raw-id` passes the identifier straight through.
+- `--confirm` — the only flag that sends. Without it, always a dry run.
+
+**Safety:** a confirmed write changes a real record. Use a dev instance, prefer an
+append-only field (`work_notes`), and a throwaway record.
+
+---
+
+## 2d. Run it from neuro-san
+
+Once the CLI probes pass, the same proven path runs behind an agent. Five steps
+from a working `check_connection.py` to talking to the network in the browser:
+
+**1. Enable the network** in `registries/tools/manifest.hocon`:
+```
+"tools/servicenow_tickets.hocon": true   # simple read-only ticket lookup
+"tools/servicenow.hocon":         true   # read + human-approved write
+```
+
+**2. Make sure the prerequisites are in place:**
+- The entity names the readers pin (`incident`, `req_item`, `request`) exist in
+  your profile's `entities`.
+- An **LLM key** is set (the front-man is an LLM): e.g. `OPENAI_API_KEY` in `.env`,
+  since the networks use `gpt-4o`.
+
+**3. Start (or restart) the server and UI** — the profile and registries are cached
+at load, so any profile/registry change needs a restart:
+```bash
+ns run
+```
+The neuro-san server listens on `localhost:8080`; the nsflow UI opens at
+**http://localhost:4173/**. Logs land in `logs/server.log`.
+
+**4. Pick the network and ask.** In the nsflow UI click **NEW** (top center), choose
+**`tools/servicenow_tickets`** (or `tools/servicenow`), and type in plain language:
+- `servicenow_tickets` → *"show me incident \<INC number\>"*, *"status of \<RITM number\>"*
+  — the front-man routes by the number's prefix to the right reader.
+- `servicenow` → *"add a work note to \<record\> saying …"* → it returns a
+  before/after diff, you approve, and only then does it commit.
+
+**5. What a good run looks like:** the front-man calls a reader → the reader hits
+the gateway (the same HTTP 200 you proved on the CLI) → you get a short summary of
+the ticket's fields. To watch the tool calls happen live, the client must send
+`chat_filter: MAXIMAL` (see §5); otherwise you see only the final answer. Grep the
+run by its correlation id in `logs/server.log` to confirm the audit leg.
+
+If a lookup returns "no record", that's a data/visibility question (does the record
+exist for this account?), **not** connectivity — the CLI already proved the pipe.
+
+---
+
 ## 3. What do you want to do?
 
 Almost everything is a config change. If your task is in this table, do exactly
@@ -182,7 +292,9 @@ what it says and touch nothing else.
 
 | I want to… | Change this | Python? |
 |---|---|---|
-| **Prove the connection works** | §2 above — `check_connection.py` | no |
+| **Port to a new environment** | §2 above — the six-step checklist | **no** |
+| **Prove a read works** | §2b — `check_connection.py` | no |
+| **Prove a write works (PUT/POST)** | §2c — `check_write.py` (dry-run, then `--confirm`) | no |
 | Run the tests | `pytest -o addopts= tests/coded_tools/tools/servicenow -q` | no |
 | **Point at a real gateway** | Copy `profile.example.json`, fill it, set `SN_PROFILE_FILE` | **no** |
 | **Add a new endpoint** (of a known shape) | Add an `operations.<name>` entry — see §3a worksheet | no |
@@ -193,7 +305,8 @@ what it says and touch nothing else.
 | Change which fields are readable / writable | `entities.<name>.read_fields` / `.write_fields` | no |
 | Make a table read-only | Set its `write_fields` to `[]` | no |
 | Fix wrong state/priority wording in answers | `entities.<name>.coded_fields` — code→label maps from the instance's choice lists | no |
-| Serve the network | `registries/tools/manifest.hocon`: flip `"tools/servicenow.hocon"` to `true` | no |
+| Serve a network | `registries/tools/manifest.hocon`: flip `"tools/servicenow.hocon"` (read + gated write) or `"tools/servicenow_tickets.hocon"` (read-only lookup) to `true` | no |
+| Interactively test ticket lookup | Enable `servicenow_tickets.hocon`, ask *"show me INC…"* / *"status of RITM…"* in the UI (§2d) | no |
 | Change credentials | Locally: `SN_CLIENT_ID` / `SN_CLIENT_SECRET` in `.env` (see `.env.example`). Cluster: the Secret behind the same names (+ `SN_GW_CREDENTIAL` for the variant flow) | no |
 | **Gateway needs an extra per-call header** (e.g. an API key id) | `auth.extra_headers` in the profile: `{ "keyId": "env:SN_KEY_ID" }`, and set `SN_KEY_ID` in `.env` / the Secret. `env:NAME` keeps the value out of the profile | no |
 | Send a literal `=` (or other char) in query values | `query_safe_chars` in the profile (default `"="`). Some custom parsers reject `%3D`; widen to e.g. `"=^"` for compound queries, `""` for strict encoding | no |
