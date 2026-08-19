@@ -35,6 +35,8 @@ import logging
 import requests
 
 from coded_tools.tools.servicenow.errors import AuthError
+from coded_tools.tools.servicenow.netconfig import describe_proxies
+from coded_tools.tools.servicenow.netconfig import proxies_from_env
 from coded_tools.tools.servicenow.profile import AuthConfig
 from coded_tools.tools.servicenow.profile import Profile
 from coded_tools.tools.servicenow.scrub import scrub_text
@@ -183,11 +185,16 @@ class TokenProvider:
         :return: The response.
         :raises AuthError: when the endpoint stays unreachable.
         """
+        # Same ServiceNow-scoped proxy as the business calls: the token endpoint is
+        # on the gateway, so it must take the SNOW proxy, not the global (LLM) one.
+        proxies = proxies_from_env()
+        log.debug("token exchange: proxy=%s", describe_proxies(proxies))
         last: Optional[Exception] = None
         for attempt in range(1, TOKEN_TRANSPORT_ATTEMPTS + 1):
             try:
                 return requests.post(self.auth.token_url, headers=headers,
-                                     timeout=self.timeout, verify=self.verify_tls, **payload)
+                                     timeout=self.timeout, verify=self.verify_tls,
+                                     proxies=proxies, **payload)
             except requests.RequestException as exception:
                 last = exception
                 if attempt < TOKEN_TRANSPORT_ATTEMPTS:

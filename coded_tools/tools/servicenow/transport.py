@@ -40,6 +40,8 @@ import requests
 from coded_tools.tools.servicenow.auth import TOKEN_CACHE
 from coded_tools.tools.servicenow.auth import build_provider
 from coded_tools.tools.servicenow.auth import resolve_extra_headers
+from coded_tools.tools.servicenow.netconfig import describe_proxies
+from coded_tools.tools.servicenow.netconfig import proxies_from_env
 from coded_tools.tools.servicenow.context import ToolContext
 from coded_tools.tools.servicenow.errors import AuthError
 from coded_tools.tools.servicenow.errors import CircuitOpenError
@@ -109,13 +111,17 @@ class RequestsTransport(HttpTransport):
             query: str = urlencode(dict(params), safe=query_safe, quote_via=quote_plus)
             request_url = f"{url}{'&' if '?' in url else '?'}{query}"
             send_params = None
-        # Header NAMES only (never values — an Authorization value is a credential).
-        log.debug("PING %s %s params=%s headers=%s", method, request_url,
-                  dict(params or {}), sorted(headers))
+        # ServiceNow-scoped proxy (SN_*), so the LLM in the same process can stay on
+        # the global proxy (or none). None => requests' default global-env handling.
+        proxies: Optional[Dict[str, str]] = proxies_from_env()
+        # Header NAMES only (never values — an Authorization value is a credential);
+        # proxy shown host-only (a proxy URL may embed credentials).
+        log.debug("PING %s %s params=%s headers=%s proxy=%s", method, request_url,
+                  dict(params or {}), sorted(headers), describe_proxies(proxies))
         try:
             response = requests.request(method, request_url, headers=dict(headers),
                                         params=send_params, json=json_body,
-                                        timeout=timeout, verify=verify)
+                                        timeout=timeout, verify=verify, proxies=proxies)
         except requests.RequestException as exception:
             log.debug("PING failed %s %s: %s", method, request_url, type(exception).__name__)
             raise TransportError(f"Downstream unreachable: {type(exception).__name__}",

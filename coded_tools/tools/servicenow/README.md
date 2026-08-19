@@ -36,6 +36,7 @@ neuro-san-studio/
 │   ├── create_record.py                   create tool (ships disabled)
 │   ├── profile.py / router.py             config loading + endpoint routing
 │   ├── auth.py / transport.py             tokens + the only HTTP in the package
+│   ├── netconfig.py                        SN-scoped proxy (SN_HTTPS_PROXY)
 │   ├── gate.py / labels.py / scrub.py     approval tokens, code<->label, redaction
 │   ├── debuglog.py                        opt-in SN_DEBUG URL-stitch tracing
 │   ├── context.py / reporting.py / errors.py
@@ -285,6 +286,37 @@ exist for this account?), **not** connectivity — the CLI already proved the pi
 
 ---
 
+## 2e. Networking: proxy for ServiceNow only
+
+One process, **two destinations with opposite needs**. The server calls both the
+gateway and an LLM. In a corporate network the gateway usually needs the **B2B
+proxy**, while an **internal LLM** must be reached **directly** (through the proxy
+it fails — TLS interception with a CA you can't trust, or no route). A single
+global `HTTP_PROXY`/`HTTPS_PROXY` can only serve one of them.
+
+So scope the proxy to ServiceNow:
+
+```bash
+# ServiceNow goes through the corporate proxy...
+SN_HTTPS_PROXY="http://<proxy-host>:<port>"
+# SN_HTTP_PROXY=...            # optional; defaults to SN_HTTPS_PROXY
+
+# ...and leave the GLOBAL proxy EMPTY so the internal LLM stays direct:
+#   (do NOT set HTTP_PROXY / HTTPS_PROXY)
+```
+
+- `SN_HTTPS_PROXY` applies **only** to this package's `requests` calls (token +
+  gateway). The LLM obeys the global vars, so an empty global keeps it direct.
+- Honoured everywhere the package makes HTTP: `check_connection.py`,
+  `check_write.py`, and the server — they all share `transport.py`/`auth.py`.
+- Unset both `SN_*` vars to fall back to the global proxy (old behaviour).
+- `SN_DEBUG=1` prints the proxy actually in effect (host only) on every call.
+
+If `check_connection.py` reports **"Token endpoint unreachable / ConnectionError"**
+(§2b) this is usually the cause: the gateway had no proxy. Set `SN_HTTPS_PROXY`.
+
+---
+
 ## 3. What do you want to do?
 
 Almost everything is a config change. If your task is in this table, do exactly
@@ -309,6 +341,7 @@ what it says and touch nothing else.
 | Interactively test ticket lookup | Enable `servicenow_tickets.hocon`, ask *"show me INC…"* / *"status of RITM…"* in the UI (§2d) | no |
 | Change credentials | Locally: `SN_CLIENT_ID` / `SN_CLIENT_SECRET` in `.env` (see `.env.example`). Cluster: the Secret behind the same names (+ `SN_GW_CREDENTIAL` for the variant flow) | no |
 | **Gateway needs an extra per-call header** (e.g. an API key id) | `auth.extra_headers` in the profile: `{ "keyId": "env:SN_KEY_ID" }`, and set `SN_KEY_ID` in `.env` / the Secret. `env:NAME` keeps the value out of the profile | no |
+| **Route the gateway through a proxy** (LLM stays direct) | `SN_HTTPS_PROXY` in `.env`; leave global `HTTP_PROXY`/`HTTPS_PROXY` empty — see §2e | no |
 | Send a literal `=` (or other char) in query values | `query_safe_chars` in the profile (default `"="`). Some custom parsers reject `%3D`; widen to e.g. `"=^"` for compound queries, `""` for strict encoding | no |
 | Rotate gate signing keys | `SN_GATE_KEYS` = comma-separated list; **new key first**, old keys stay until tokens expire (5 min) | no |
 | Switch token flow after `--try-both` | `auth.style`: `standard` or `preencoded` | no |
