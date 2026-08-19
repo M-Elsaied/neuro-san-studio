@@ -80,6 +80,53 @@ green suite means the port itself is sound before you touch any real endpoint.
 
 ---
 
+## 2a. Promotion checklist — files, variables, profile keys
+
+Everything a new environment (e.g. **dev**) needs, in one place.
+
+**Files that make up this feature — copy/port these:**
+```
+coded_tools/tools/servicenow/                 the whole package (code + probes + demo)
+registries/tools/servicenow.hocon             agent network: read + human-approved write
+registries/tools/servicenow_tickets.hocon     agent network: read-only ticket lookup
+registries/tools/manifest.hocon               ADD the two lines registering the networks
+tests/coded_tools/tools/servicenow/           the test suite
+```
+Both registries `include "config/llm_config.hocon"` (shared LLM wiring); that file
+already exists in neuro-san-studio — keep it. Two things live **outside** git:
+`sn_profile.json` (your filled profile) and `.env` / the cluster Secret (variables
+below). Neither is ever committed.
+
+**Environment variables:**
+| Variable | Required? | What |
+|---|---|---|
+| `SN_PROFILE_FILE` | **yes** | absolute path to your filled `sn_profile.json` |
+| `SN_CLIENT_ID` / `SN_CLIENT_SECRET` | **yes** | OAuth client-credentials |
+| `SN_GATE_KEYS` | writes only | HMAC approval-gate key(s), comma-separated, **same on every replica** |
+| `SN_KEY_ID` | if the gateway demands it | value for the per-call `keyId` header; referenced from the profile as `env:SN_KEY_ID` |
+| `SN_HTTPS_PROXY` / `SN_HTTP_PROXY` | if behind a proxy | routes **only** ServiceNow through the proxy — leave global `HTTP_PROXY`/`HTTPS_PROXY` **empty** so an internal LLM stays direct (§2e) |
+| `SN_GW_CREDENTIAL` | pre-encoded auth flow only | opaque Basic credential (see `auth.style`) |
+| LLM key — `AZURE_OPENAI_*` or `OPENAI_API_KEY` | **yes**, for the agent networks | the front-man LLM, wired via `config/llm_config.hocon` |
+
+**`sn_profile.json` must define:**
+- `base_url` (**including every fixed path segment** before the operation path),
+  `auth.token_url`, `auth.style`, and `auth.extra_headers` if a `keyId` header is
+  required. Optional: `query_safe_chars` (default `"="`) for picky query parsers.
+- `operations`: at least `read`; add `update`/`create` for writes.
+- `entities`: one per **logical key** your enabled network pins (exact string
+  match — a missing key errors `profile_invalid` when that reader runs):
+  - `servicenow_tickets` pins: `incident`, `req_item`, `problem`,
+    `change_request`, `task`, `sc_task`, `cmdb_ci`. Add each type you'll use.
+  - `servicenow` (read + write) pins: `request`.
+  - Ticket entities use `display_field: "number"`; **`cmdb_ci` uses
+    `display_field: "name"`** (and `name` in its `read_fields`).
+  - Curate `read_fields` per table — it **is** the field extraction. Use CI fields
+    for `cmdb_ci` (`name`, `sys_class_name`, status/asset fields), not ticket fields.
+    Run `check_connection.py --entity <x> --record <ref>` to see every field the
+    gateway returns, then list the ones you want.
+
+---
+
 ## 2b. Prove the connection — reads (2 minutes)
 
 Before any agent, server or LLM key: run the connection check. It proves
@@ -255,10 +302,11 @@ from a working `check_connection.py` to talking to the network in the browser:
 ```
 
 **2. Make sure the prerequisites are in place:**
-- The entity names the readers pin (`incident`, `req_item`, `request`) exist in
-  your profile's `entities`.
-- An **LLM key** is set (the front-man is an LLM): e.g. `OPENAI_API_KEY` in `.env`,
-  since the networks use `gpt-4o`.
+- The **entity keys** each reader pins exist in your profile's `entities`
+  (§2a): `servicenow_tickets` pins `incident`, `req_item`, `problem`,
+  `change_request`, `task`, `sc_task`, `cmdb_ci`; `servicenow` pins `request`.
+- An **LLM key** is set (the front-man is an LLM), wired via
+  `config/llm_config.hocon` — e.g. `AZURE_OPENAI_*` or `OPENAI_API_KEY` in `.env`.
 
 **3. Start (or restart) the server and UI** — the profile and registries are cached
 at load, so any profile/registry change needs a restart:
@@ -270,8 +318,11 @@ The neuro-san server listens on `localhost:8080`; the nsflow UI opens at
 
 **4. Pick the network and ask.** In the nsflow UI click **NEW** (top center), choose
 **`tools/servicenow_tickets`** (or `tools/servicenow`), and type in plain language:
-- `servicenow_tickets` → *"show me incident \<INC number\>"*, *"status of \<RITM number\>"*
-  — the front-man routes by the number's prefix to the right reader.
+- `servicenow_tickets` → the front-man routes by the reference to the right reader:
+  INC→incident, RITM→req_item, PRB→problem, CHG→change_request, TASK→task,
+  SCTASK→sc_task, and a **CI by name** ("look up the CI named …")→cmdb_ci. It only
+  reaches types whose entity key you've added to the profile; others say "not wired
+  up / not configured" — expected.
 - `servicenow` → *"add a work note to \<record\> saying …"* → it returns a
   before/after diff, you approve, and only then does it commit.
 
