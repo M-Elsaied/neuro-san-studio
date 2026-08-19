@@ -19,9 +19,10 @@
 # and entity; the package resolves those to a real endpoint using the deployment
 # profile. The same file is therefore portable between environments and clients.
 {
-    "llm_config": {
-        "model_name": "gpt-4o",
-    },
+    # Shared LLM configuration (single source of truth in config/llm_config.hocon,
+    # relative to the repo root). Without this the network has no provider wiring
+    # and fails to start. Change the model there, not here.
+    include "config/llm_config.hocon",
 
     "metadata": {
         "description": "Works with records in a ServiceNow-style system of record through an API gateway. Reads are direct; every change is proposed, approved by a person, and only then applied.",

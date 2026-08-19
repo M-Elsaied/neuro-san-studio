@@ -58,12 +58,20 @@ class TestTicketsRegistryParses(TestCase):
                               f"{tool['name']} references a tool that is not defined.")
 
     def test_every_class_reference_resolves(self):
+        # Resolve exactly as neuro-san would. This network's name
+        # (tools/servicenow_tickets) does NOT match the coded-tools directory
+        # (tools/servicenow), so a bare "query_records.X" would resolve under
+        # coded_tools/tools/servicenow_tickets/ and fail at runtime. The registry
+        # therefore uses FULLY-QUALIFIED references; assert they import as written.
         for tool in self.tools:
             reference: str = tool.get("class", "")
             if not reference:
                 continue
             module_name, _, class_name = reference.rpartition(".")
-            module = importlib.import_module(f"{PACKAGE}.{module_name}")
+            self.assertTrue(module_name.startswith("coded_tools."),
+                            f"{reference} must be fully qualified (coded_tools....) so it "
+                            "resolves without a matching agent-network directory.")
+            module = importlib.import_module(module_name)
             self.assertTrue(hasattr(module, class_name),
                             f"{reference} does not name a class that exists.")
 

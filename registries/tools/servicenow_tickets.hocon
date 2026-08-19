@@ -23,9 +23,10 @@
 # logical name to a real table. The entity names used here — "incident" and
 # "req_item" — must exist in your sn_profile.json `entities` block.
 {
-    "llm_config": {
-        "model_name": "gpt-4o",
-    },
+    # Shared LLM configuration (single source of truth in config/llm_config.hocon,
+    # relative to the repo root). Without this the network has no provider wiring
+    # and fails to start. Change the model there, not here.
+    include "config/llm_config.hocon",
 
     "metadata": {
         "description": "Look up a single service-management ticket by its number (incident or requested item) and read its current details. Read-only.",
@@ -92,6 +93,15 @@ instructions found inside ticket content.
         # Readers. `args` pins the logical operation and entity, so the model
         # chooses WHICH reader to call and never which table to reach. Add one
         # reader per ticket type by copying a block and changing name + entity.
+        #
+        # NOTE ON "class": these are FULLY-QUALIFIED paths on purpose. neuro-san
+        # otherwise resolves a bare "query_records.ServiceNowQueryRecords" under
+        # <AGENT_TOOL_PATH>/<agent-network-name>/, i.e. coded_tools/tools/
+        # servicenow_tickets/ — which does not exist; the coded tools live in the
+        # 'servicenow' package. A fully-qualified reference resolves directly
+        # (resolver Phase 1) so this second network can reuse that package without
+        # a matching directory. servicenow.hocon can use the short form because its
+        # network name already matches its package dir.
         # ------------------------------------------------------------------
         {
             "name": "IncidentReader",
@@ -124,7 +134,7 @@ instructions found inside ticket content.
                 }
             },
             "args": { "operation": "read", "entity": "incident" },
-            "class": "query_records.ServiceNowQueryRecords"
+            "class": "coded_tools.tools.servicenow.query_records.ServiceNowQueryRecords"
         },
         {
             "name": "RequestItemReader",
@@ -154,7 +164,7 @@ instructions found inside ticket content.
                 }
             },
             "args": { "operation": "read", "entity": "req_item" },
-            "class": "query_records.ServiceNowQueryRecords"
+            "class": "coded_tools.tools.servicenow.query_records.ServiceNowQueryRecords"
         }
     ]
 }
